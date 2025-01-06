@@ -10,6 +10,8 @@
 #include "dpt_risk.h"
 #include "bytehook.h"
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wvla-cxx-extension"
 using namespace dpt;
 
 extern std::unordered_map<int, std::unordered_map<int, data::CodeItem*>*> dexMap;
@@ -19,7 +21,9 @@ int g_sdkLevel = 0;
 void dpt_hook() {
     bytehook_init(BYTEHOOK_MODE_AUTOMATIC,false);
     g_sdkLevel = android_get_device_api_level();
-    hook_execve();
+    if(g_sdkLevel<29){
+        hook_execve();
+    }
     hook_mmap();
     hook_DefineClass();
 }
@@ -344,3 +348,5 @@ DPT_ENCRYPT void hook_execve(){
         DLOGE("execve hook fail!");
     }
 }
+
+#pragma clang diagnostic pop
