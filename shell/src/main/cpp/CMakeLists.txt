@@ -69,6 +69,7 @@ include_directories(./common)
 add_library(dpt
              SHARED
         ${DPT_NATIVE_SOURCE})
+set_target_properties(dpt PROPERTIES OUTPUT_NAME "dexShadow")
 
 
 include_directories(
