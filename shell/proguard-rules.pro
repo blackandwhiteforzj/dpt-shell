@@ -27,3 +27,4 @@
     public static int i(...);
     public static int v(...);
 }
+#-keep class com.yeahka.shell.** {*;}

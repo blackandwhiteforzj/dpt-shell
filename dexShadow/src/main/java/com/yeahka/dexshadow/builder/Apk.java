@@ -9,18 +9,21 @@ import com.wind.meditor.property.AttributeItem;
 import com.wind.meditor.property.ModificationProperty;
 import com.wind.meditor.utils.NodeValue;
 import com.yeahka.dexshadow.Const;
+import com.yeahka.dexshadow.elf.ReadElf;
 import com.yeahka.dexshadow.model.ChannelBean;
 import com.yeahka.dexshadow.model.Instruction;
 import com.yeahka.dexshadow.model.MultiDexCode;
 import com.yeahka.dexshadow.task.ThreadPool;
 import com.yeahka.dexshadow.util.DexUtils;
 import com.yeahka.dexshadow.util.FileUtils;
+import com.yeahka.dexshadow.util.HexUtils;
 import com.yeahka.dexshadow.util.IoUtils;
 import com.yeahka.dexshadow.util.KeyStore;
 import com.yeahka.dexshadow.util.KeyStoreUtil;
 import com.yeahka.dexshadow.util.LogUtils;
 import com.yeahka.dexshadow.util.ManifestUtils;
 import com.yeahka.dexshadow.util.MultiDexCodeUtils;
+import com.yeahka.dexshadow.util.RC4Utils;
 import com.yeahka.dexshadow.util.SignUtils;
 import com.yeahka.dexshadow.util.ZipUtils;
 
@@ -177,12 +180,87 @@ public class Apk extends AndroidPackage {
         apk.compressDexFiles(apkMainProcessPath);
         apk.deleteAllDexFiles(apkMainProcessPath);
         apk.combineDexZipWithShellDex(apkMainProcessPath);
-
         apk.copyNativeLibs(apkMainProcessPath);
+        byte[] rc4key = RC4Utils.generateRC4Key();
+        apk.encryptSoFiles(apkMainProcessPath,rc4key);
 
         apk.buildApk(apk,apkFile.getAbsolutePath(), apkMainProcessPath, FileUtils.getExecutablePath());
     }
 
+    private void encryptSoFiles(String apkDir, byte[] rc4Key){
+        File obfDir = new File(getOutAssetsDir(apkDir).getAbsolutePath() + File.separator, "vwwwwwvwww");
+        File[] soAbiDirs = obfDir.listFiles();
+        if(soAbiDirs != null) {
+            for (File soAbiDir : soAbiDirs) {
+                File[] soFiles = soAbiDir.listFiles();
+                if(soFiles != null) {
+                    for (File soFile : soFiles) {
+                        if(!soFile.getAbsolutePath().endsWith(".so")) {
+                            continue;
+                        }
+                        encryptSoFile(soFile, rc4Key);
+                        writeRC4Key(soFile, rc4Key);
+                    }
+                }
+            }
+        }
+
+    }
+
+    private void encryptSoFile(File soFile, byte[] rc4Key) {
+        try {
+            ReadElf readElf = new ReadElf(soFile);
+            List<ReadElf.SectionHeader> sectionHeaders = readElf.getSectionHeaders();
+            readElf.close();
+            for (ReadElf.SectionHeader sectionHeader : sectionHeaders) {
+                if(".bitcode".equals(sectionHeader.getName())) {
+                    LogUtils.info("start encrypt %s section: %s, offset: %s, size: %s",
+                            soFile.getAbsolutePath(),
+                            sectionHeader.getName(),
+                            HexUtils.toHexString(sectionHeader.getOffset()),
+                            sectionHeader.getSize()
+                    );
+
+                    byte[] bitcode = IoUtils.readFile(soFile.getAbsolutePath(),
+                            sectionHeader.getOffset(),
+                            (int)sectionHeader.getSize()
+                    );
+
+                    byte[] enc = RC4Utils.crypt(rc4Key, bitcode);
+                    IoUtils.writeFile(soFile.getAbsolutePath(),enc,sectionHeader.getOffset());
+                }
+            }
+        }
+        catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void writeRC4Key(File soFile, byte[] rc4key) {
+        try {
+            ReadElf readElf = new ReadElf(soFile);
+            ReadElf.Symbol symbol = readElf.getDynamicSymbol(Const.RC4_KEY_SYMBOL);
+            if(symbol == null) {
+                LogUtils.warn("cannot find symbol in %s, no need write key", soFile.getName());
+                return;
+            }
+            else {
+                LogUtils.info("find symbol(%s) in %s", HexUtils.toHexString(symbol.value), soFile.getName());
+            }
+            long value = symbol.value;
+            int shndx = symbol.shndx;
+            List<ReadElf.SectionHeader> sectionHeaders = readElf.getSectionHeaders();
+            ReadElf.SectionHeader sectionHeader = sectionHeaders.get(shndx);
+            long symbolDataOffset = sectionHeader.getOffset() + value - sectionHeader.getAddr();
+            LogUtils.info("write symbol data to %s(%s)", soFile.getName(), HexUtils.toHexString(symbolDataOffset));
+
+            readElf.close();
+            IoUtils.writeFile(soFile.getAbsolutePath(),rc4key,symbolDataOffset);
+        }
+        catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
     private static void listAllFiles(File dir, HashMap<String, Long> map) {
         try {
             // 获取文件夹中的所有文件和子文件夹
@@ -707,4 +785,5 @@ public class Apk extends AndroidPackage {
             return -1;
         }
     }
+
 }

@@ -44,4 +44,6 @@ public class Const {
 
 
     public static final short MULTI_DEX_CODE_VERSION = 1;
+    public static final String RC4_KEY_SYMBOL = "DPT_UNKNOWN_DATA";
+
 }

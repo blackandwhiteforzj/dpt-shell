@@ -27,7 +27,7 @@ DPT_ENCRYPT NO_INLINE void dpt_crash() {
 DPT_ENCRYPT void junkCodeDexProtect(JNIEnv *env) {
     jclass klass = dpt::jni::FindClass(env,JUNK_CLASS_FULL_NAME);
     if(klass == nullptr) {
-        dpt_crash();
+//        dpt_crash();
     }
 }
 
