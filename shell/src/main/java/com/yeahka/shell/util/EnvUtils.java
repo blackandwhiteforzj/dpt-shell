@@ -1,4 +1,4 @@
-package com.luoyesiqiu.shell.util;
+package com.yeahka.shell.util;
 
 import android.content.pm.ApplicationInfo;
 import android.os.Build;
