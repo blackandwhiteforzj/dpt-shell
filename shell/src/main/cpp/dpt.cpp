@@ -500,12 +500,14 @@ void read_shell_config(JNIEnv *env) {
             g_shell_config.jni_class_name = shell_config.value("jni_cls_name", "");
             g_shell_config.app_sign_sha256 = shell_config.value("app_sign_sha256", "");
             g_shell_config.dex_sign = shell_config.value("dex_sign", "");
+            g_shell_config.insns_xor_key = shell_config.value("insns_xor_key", 0);
 
             DLOGD("application_name = %s", g_shell_config.application_name.c_str());
             DLOGD("application_component_factory = %s", g_shell_config.application_component_factory.c_str());
             DLOGD("jni_class_name = %s", g_shell_config.jni_class_name.c_str());
             DLOGD("app_sign_sha256 = %s", g_shell_config.app_sign_sha256.c_str());
             DLOGD("dex_sign = %s", g_shell_config.dex_sign.c_str());
+            DLOGD("insns_xor_key = 0x%x", g_shell_config.insns_xor_key);
 
         }
     }

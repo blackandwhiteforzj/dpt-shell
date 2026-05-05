@@ -20,6 +20,7 @@ import com.android.tools.smali.dexlib2.rewriter.RewriterModule;
 import com.android.tools.smali.dexlib2.rewriter.Rewriters;
 import com.android.tools.smali.dexlib2.rewriter.TypeRewriter;
 import com.luoye.dpt.config.ProtectRules;
+import com.luoye.dpt.config.ShellConfig;
 import com.luoye.dpt.model.Instruction;
 
 import org.apache.commons.lang3.tuple.ImmutablePair;
@@ -460,6 +461,14 @@ public class DexUtils {
             }
             else {
                 outRandomAccessFile.writeShort(0x0e);
+            }
+        }
+
+        int xorKey = ShellConfig.getInstance().getInsnsXorKey();
+        if (xorKey != 0) {
+            for (int i = 0; i < byteCode.length; i++) {
+                int shift = (i & 3) << 3;
+                byteCode[i] = (byte) (byteCode[i] ^ ((xorKey >> shift) & 0xff));
             }
         }
         instruction.setInstructionsData(byteCode);

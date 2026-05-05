@@ -46,6 +46,7 @@ struct ShellConfig {
     std::string jni_class_name;
     std::string app_sign_sha256;
     std::string dex_sign;
+    uint32_t insns_xor_key = 0;
 };
 
 void callRealApplicationOnCreate(JNIEnv *env, jclass, jstring realApplicationClassName);

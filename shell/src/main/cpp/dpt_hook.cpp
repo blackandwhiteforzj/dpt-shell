@@ -4,6 +4,7 @@
 
 #include <map>
 #include <unordered_map>
+#include <vector>
 #include <sys/system_properties.h>
 #include "dex/CodeItem.h"
 #include "common/dpt_string.h"
@@ -109,7 +110,20 @@ void patchMethod(uint8_t *begin,
                  realInsnsPtr,
                  (unsigned int)(realInsnsPtr - begin));
 
-            memcpy(realInsnsPtr,codeItem->getInsns(),codeItem->getInsnsSize());
+            uint32_t xorKey = g_shell_config.insns_xor_key;
+            if (xorKey == 0) {
+                memcpy(realInsnsPtr, codeItem->getInsns(), codeItem->getInsnsSize());
+            } else {
+                thread_local std::vector<uint8_t> tmp;
+                uint32_t sz = codeItem->getInsnsSize();
+                tmp.resize(sz);
+                const uint8_t* enc = codeItem->getInsns();
+                for (uint32_t i = 0; i < sz; i++) {
+                    uint32_t shift = (i & 3u) << 3u;
+                    tmp[i] = (uint8_t)(enc[i] ^ ((xorKey >> shift) & 0xffu));
+                }
+                memcpy(realInsnsPtr, tmp.data(), sz);
+            }
         }
         else{
             NLOG("cannot find  methodId: %d in codeitem map, dex index: %d(%s)", methodIdx, dexIndex, location);

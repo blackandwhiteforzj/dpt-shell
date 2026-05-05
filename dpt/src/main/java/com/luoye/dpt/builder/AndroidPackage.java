@@ -41,6 +41,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.security.KeyStore;
 import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.security.cert.Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -641,6 +642,13 @@ public abstract class AndroidPackage {
         AtomicInteger keepClassesCount = new AtomicInteger(0);
 
         ShellConfig shellConfig = ShellConfig.getInstance();
+        if (shellConfig.getInsnsXorKey() == 0) {
+            int key = new SecureRandom().nextInt();
+            if (key == 0) {
+                key = 0x6f3a2c1d;
+            }
+            shellConfig.setInsnsXorKey(key);
+        }
         for(File dexFile : dexFiles) {
             ThreadPool.getInstance().execute(() -> {
                 final int dexNo = DexUtils.getDexNumber(dexFile.getName());

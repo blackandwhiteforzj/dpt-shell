@@ -24,6 +24,9 @@ public class ShellConfig {
     @JSONField(name = "dex_sign")
     private String dexSign;
 
+    @JSONField(name = "insns_xor_key")
+    private int insnsXorKey;
+
     private ShellConfig() {
     }
 
@@ -143,6 +146,14 @@ public class ShellConfig {
         this.dexSign = dexSign;
     }
 
+    public int getInsnsXorKey() {
+        return insnsXorKey;
+    }
+
+    public void setInsnsXorKey(int insnsXorKey) {
+        this.insnsXorKey = insnsXorKey;
+    }
+
     public String getJniSlashClassName() {
         return String.format(Locale.US, "%s/%s",
                 getSlashShellPackageName(),
@@ -164,6 +175,7 @@ public class ShellConfig {
             jsonObject.put("app_sign_sha256", getAppSignSha256());
         }
         jsonObject.put("dex_sign", getDexSign());
+        jsonObject.put("insns_xor_key", getInsnsXorKey());
         return jsonObject.toString();
     }
 
