@@ -653,6 +653,7 @@ public abstract class AndroidPackage {
             ThreadPool.getInstance().execute(() -> {
                 final int dexNo = DexUtils.getDexNumber(dexFile.getName());
                 if(dexNo < 0) {
+                    countDownLatch.countDown();
                     return;
                 }
 
