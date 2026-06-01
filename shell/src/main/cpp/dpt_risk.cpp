@@ -77,9 +77,18 @@ DPT_ENCRYPT void *protectProcessOnThread(void *args) {
 
     free(args);
 
-    int pid = waitpid(child, nullptr, 0);
+    int status = 0;
+    int pid = waitpid(child, &status, 0);
     if(pid > 0) {
-        DLOGW("detect child process %d exited", pid);
+        DLOGW("detect child process %d exited, status: %d", pid, status);
+        // 如果子进程是被系统回收或激进后台控制杀死的（常见为 SIGKILL、SIGTERM），不要崩溃主进程
+        if (WIFSIGNALED(status)) {
+            int sig = WTERMSIG(status);
+            if (sig == SIGKILL || sig == SIGTERM || sig == SIGPIPE) {
+                DLOGW("Child process killed by system signal %d, skip crash to maintain stability", sig);
+                return nullptr;
+            }
+        }
         dpt_crash();
     }
     DLOGD("waitpid %d end", child);
