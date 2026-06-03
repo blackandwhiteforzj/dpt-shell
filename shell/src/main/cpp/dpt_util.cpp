@@ -118,27 +118,31 @@ static int separate_dex_number(std::string& str) {
     return sum;
 }
 /**
- * Get dex index from dex location
- * e.g. base.apk!classes2.dex will get 1
+ * 从 dex location 解析出 multidex 下标(与 dexMap 的 key 对齐)。
+ * 兼容两种格式:
+ *   旧格式: base.apk!classes2.dex  → 1   (classes.dex 主 dex → 0)
+ *   新格式(Android 16/17): base.zip!4 → 4 (主 dex 无后缀 → 0)
+ * Android 17 起,multidex 后缀从 "!classesN.dex" 变成了纯数字 "!N",N 即 0-based 下标,
+ * 旧逻辑因为只在出现 ".dex" 时才解析,会把所有 dex 都算成 0,导致只有 dex0 被正确还原。
  */
 int parse_dex_number(std::string& location) {
-    int raw_dex_index = 1;
-    if (location.rfind(".dex") != std::string::npos) {
-        size_t sep = location.rfind('!');
-        if(sep != std::string::npos){
-            raw_dex_index = separate_dex_number(location);
-        }
-        else{
-            sep = location.rfind(':');
-            if(sep != std::string::npos){
-                raw_dex_index = separate_dex_number(location);
-            }
-        }
-    } else {
-        raw_dex_index = 1;
+    size_t sep = location.rfind('!');
+    if (sep == std::string::npos) {
+        sep = location.rfind(':');
+    }
+    if (sep == std::string::npos) {
+        return 0;  // 主 dex,无 multidex 后缀
     }
 
-    return raw_dex_index - 1;
+    std::string suffix = location.substr(sep + 1);   // 如 "classes2.dex" 或 "4"
+    int num = separate_dex_number(suffix);
+
+    if (suffix.find(".dex") != std::string::npos) {
+        // 旧格式 base!classesN.dex:classes.dex 无数字(num=0)→ 0;classesN.dex → N-1
+        return num <= 0 ? 0 : (num - 1);
+    }
+    // 新格式 base!N:N 本身就是 0-based multidex 下标
+    return num;
 }
 
 void parseClassName(const char *src, char *dest) {
@@ -671,4 +675,43 @@ std::string to_hex(const uint8_t* data, size_t length) {
     }
 
     return ss.str();
+}
+
+// 安全写回:用于把还原后的指令写进只读的 dex 内存页。
+// 先尝试 /proc/self/mem 穿透写;失败(部分 ROM/内核限制,如 vivo Android 17)时,
+// 必须先把目标页 mprotect 为可写再 memcpy —— 否则直接 memcpy 只读页会触发
+// SIGSEGV(SEGV_ACCERR)。连 mprotect 都失败时宁可跳过本次写回,也不让进程崩溃。
+bool safe_memcpy(void* dest, const void* src, size_t size) {
+    if (dest == nullptr || src == nullptr || size == 0) {
+        return false;
+    }
+    // 1) 尝试通过内核 /proc/self/mem 穿透页表写锁定。
+    // 注意:部分 ROM(如 vivo Android 17)对 /proc/self/mem 写做了限制,open 直接被拒。
+    // 用静态标志记住"不可用",避免每个方法都 open + 打日志(否则启动时会刷数万行日志、
+    // 把关键日志冲掉,并显著拖慢启动)。
+    static bool s_procmem_unusable = false;
+    if (!s_procmem_unusable) {
+        int fd = open("/proc/self/mem", O_RDWR | O_CLOEXEC);
+        if (fd != -1) {
+            ssize_t written = pwrite(fd, src, size, (off_t)dest);
+            close(fd);
+            if (written == (ssize_t)size) {
+                return true;
+            }
+            // 打开成功但写失败:本次走 mprotect 回退,不置标志(可能仅个别地址失败)
+        } else {
+            s_procmem_unusable = true;  // 打开都被拒(权限),后续不再尝试,避免刷屏
+            DLOGW("safe_memcpy: /proc/self/mem unusable (%s), fallback to mprotect+memcpy", strerror(errno));
+        }
+    }
+
+    // 2) 回退前先确保目标页可写
+    void* dest_end = (void*)((uint8_t*)dest + size);
+    if (dpt_mprotect(dest, dest_end, PROT_READ | PROT_WRITE | PROT_EXEC) != 0 &&
+        dpt_mprotect(dest, dest_end, PROT_READ | PROT_WRITE) != 0) {
+        DLOGE("safe_memcpy: mprotect RW failed for addr: %p, skip to avoid crash", dest);
+        return false;
+    }
+    memcpy(dest, src, size);
+    return true;
 }

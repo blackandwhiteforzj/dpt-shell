@@ -4,6 +4,7 @@
 
 #include "dpt.h"
 #include "dpt_crypto.h"
+#include "dpt_hook.h"
 #include "external/json/json.hpp"
 
 using namespace dpt;
@@ -91,6 +92,14 @@ DPT_ENCRYPT void combineDexElement(JNIEnv* env, jclass __unused, jobject targetC
     }
 
     targetDexPathList.setDexElements(newDexElements);
+
+    // Android 16+ 上 DefineClass 不可 hook、降级 hook 的 LoadClass 在新版 ART 上
+    // 命中不全(实测 16 回填十几个 dex、17 仅 1 个),会导致部分受保护 dex 的
+    // code item 未还原而触发 VerifyError 闪退。此处在 dex 已挂载、应用类尚未加载/
+    // 校验之前,主动预还原全部受保护 dex,彻底绕开"依赖 hook 命中"的不确定性。
+    if(g_loadClassFallback) {
+        patchAllProtectedDexes(env, extraDexElements);
+    }
 
     DLOGD("success");
 }
