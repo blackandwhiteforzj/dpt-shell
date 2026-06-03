@@ -76,6 +76,6 @@ void printTime(const char* msg,clock_t start);
 const char* getThreadName();
 
 std::string to_hex(const uint8_t* data, size_t length);
-bool safe_memcpy(void* dest, const void* src, size_t size);
+
 
 #endif //DPT_DPT_UTIL_H

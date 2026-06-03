@@ -121,7 +121,7 @@ void patchMethod(uint8_t *begin,
 
             uint32_t xorKey = g_shell_config.insns_xor_key;
             if (xorKey == 0) {
-                safe_memcpy(realInsnsPtr, codeItem->getInsns(), codeItem->getInsnsSize());
+                memcpy(realInsnsPtr, codeItem->getInsns(), codeItem->getInsnsSize());
             } else {
                 thread_local std::vector<uint8_t> tmp;
                 uint32_t sz = codeItem->getInsnsSize();
@@ -131,7 +131,7 @@ void patchMethod(uint8_t *begin,
                     uint32_t shift = (i & 3u) << 3u;
                     tmp[i] = (uint8_t)(enc[i] ^ ((xorKey >> shift) & 0xffu));
                 }
-                safe_memcpy(realInsnsPtr, tmp.data(), sz);
+                memcpy(realInsnsPtr, tmp.data(), sz);
             }
         }
         else{
