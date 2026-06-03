@@ -316,7 +316,7 @@ void patchAllProtectedDexes(JNIEnv *env, jobjectArray dexElements) {
     jfieldID cookieField = env->GetFieldID(dexFileClass, "mCookie", "Ljava/lang/Object;");
     if (env->ExceptionCheck()) { env->ExceptionClear(); return; }
 
-    int restoredDexCount = 0;
+    [[maybe_unused]] int restoredDexCount = 0;
     jsize elemCount = env->GetArrayLength(dexElements);
     for (jsize e = 0; e < elemCount; e++) {
         jobject elementObj = env->GetObjectArrayElement(dexElements, e);
@@ -384,7 +384,8 @@ void patchAllProtectedDexes(JNIEnv *env, jobjectArray dexElements) {
                         DLOGI("eager: dex index %d (loc=%s) not in dexMap, skip", dexIndex, location.c_str());
                         continue;
                     }
-                    int candidates = patchAllClassesInDex(begin, location.c_str(), dexSize, dexIndex);
+                    [[maybe_unused]] int candidates =
+                            patchAllClassesInDex(begin, location.c_str(), dexSize, dexIndex);
                     DLOGI("eager restore dex[%d] begin=%p size=%llu candidates=%d loc=%s",
                           dexIndex, begin, (unsigned long long) dexSize, candidates, location.c_str());
                     restoredDexCount++;
