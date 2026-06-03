@@ -118,27 +118,31 @@ static int separate_dex_number(std::string& str) {
     return sum;
 }
 /**
- * Get dex index from dex location
- * e.g. base.apk!classes2.dex will get 1
+ * 从 dex location 解析出 multidex 下标(与 dexMap 的 key 对齐)。
+ * 兼容两种格式:
+ *   旧格式: base.apk!classes2.dex  → 1   (classes.dex 主 dex → 0)
+ *   新格式(Android 16/17): base.zip!4 → 4 (主 dex 无后缀 → 0)
+ * Android 17 起,multidex 后缀从 "!classesN.dex" 变成了纯数字 "!N",N 即 0-based 下标,
+ * 旧逻辑因为只在出现 ".dex" 时才解析,会把所有 dex 都算成 0,导致只有 dex0 被正确还原。
  */
 int parse_dex_number(std::string& location) {
-    int raw_dex_index = 1;
-    if (location.rfind(".dex") != std::string::npos) {
-        size_t sep = location.rfind('!');
-        if(sep != std::string::npos){
-            raw_dex_index = separate_dex_number(location);
-        }
-        else{
-            sep = location.rfind(':');
-            if(sep != std::string::npos){
-                raw_dex_index = separate_dex_number(location);
-            }
-        }
-    } else {
-        raw_dex_index = 1;
+    size_t sep = location.rfind('!');
+    if (sep == std::string::npos) {
+        sep = location.rfind(':');
+    }
+    if (sep == std::string::npos) {
+        return 0;  // 主 dex,无 multidex 后缀
     }
 
-    return raw_dex_index - 1;
+    std::string suffix = location.substr(sep + 1);   // 如 "classes2.dex" 或 "4"
+    int num = separate_dex_number(suffix);
+
+    if (suffix.find(".dex") != std::string::npos) {
+        // 旧格式 base!classesN.dex:classes.dex 无数字(num=0)→ 0;classesN.dex → N-1
+        return num <= 0 ? 0 : (num - 1);
+    }
+    // 新格式 base!N:N 本身就是 0-based multidex 下标
+    return num;
 }
 
 void parseClassName(const char *src, char *dest) {
