@@ -6,6 +6,7 @@
 #define DPT_DPT_HOOK_H
 #include <iostream>
 #include <cstdint>
+#include <jni.h>
 #include <sys/mman.h>
 #include <android/api-level.h>
 #include <cstdint>
@@ -19,6 +20,12 @@
 
 
 void dpt_hook();
+
+// 是否走了 LoadClass 降级路径(见 dpt_hook.cpp 中说明)。
+extern bool g_loadClassFallback;
+
+// 预还原全部受保护 dex 的 code item(仅 LoadClass 降级路径下使用)。
+void patchAllProtectedDexes(JNIEnv *env, jobjectArray dexElements);
 
 static void* (*g_originDefineClassV22)(void* thiz,
         void* self,

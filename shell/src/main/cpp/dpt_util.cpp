@@ -676,3 +676,4 @@ std::string to_hex(const uint8_t* data, size_t length) {
 
     return ss.str();
 }
+

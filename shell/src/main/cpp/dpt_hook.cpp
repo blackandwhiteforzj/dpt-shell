@@ -17,6 +17,14 @@ using namespace dpt;
 
 extern std::unordered_map<int, std::vector<data::CodeItem*>*> dexMap;
 std::map<int,uint8_t *> dexMemMap;
+
+// 是否走了 LoadClass 降级路径(Android 16+ 上 ClassLinker::DefineClass 变更/内联,
+// hook 会导致启动闪退,故 hook_DefineClass 失败后改 hook LoadClass)。
+// 但新版 ART 上 LoadClass 也大量被内联/走 oat 快速路径,该 hook 几乎不命中
+// (实测 Android 16 回填十几个 dex,Android 17 仅 1 个),导致部分受保护 dex 的
+// code item 未还原而触发 VerifyError。该标志为真时,在 dex 挂载完成、应用类校验
+// 之前主动预还原全部受保护 dex。
+bool g_loadClassFallback = false;
 int g_sdkLevel = 0;
 extern ShellConfig g_shell_config;
 
@@ -28,6 +36,7 @@ void dpt_hook() {
     hook_write();
     bool hookSuccess = hook_DefineClass();
     if(!hookSuccess) {
+        g_loadClassFallback = true;
         hook_LoadClass();
     }
 }
@@ -230,6 +239,169 @@ DPT_ENCRYPT void patchClass(__unused const char* descriptor,
             }
         }
     }
+}
+
+// 还原单个 dex 内全部类的全部方法 code item。供预还原(eager restore)使用,
+// 逻辑与 patchClass 中按类还原的部分一致,只是遍历该 dex 的所有 class_def。
+DPT_ENCRYPT
+int patchAllClassesInDex(uint8_t *begin, const char *location, uint64_t dexSize, int dexIndex) {
+    auto *header = (dex::Header *) begin;
+    uint32_t classDefsSize = header->class_defs_size_;
+    auto *classDefs = (dex::ClassDef *) (begin + header->class_defs_off_);
+
+    int methodCandidates = 0;
+    for (uint32_t c = 0; c < classDefsSize; c++) {
+        dex::ClassDef *class_def = &classDefs[c];
+        if (class_def->class_data_off_ == 0) {
+            continue;
+        }
+
+        size_t read = 0;
+        auto *class_data = (uint8_t *) (begin + class_def->class_data_off_);
+
+        uint64_t static_fields_size = 0;
+        read += DexFileUtils::readUleb128(class_data, &static_fields_size);
+
+        uint64_t instance_fields_size = 0;
+        read += DexFileUtils::readUleb128(class_data + read, &instance_fields_size);
+
+        uint64_t direct_methods_size = 0;
+        read += DexFileUtils::readUleb128(class_data + read, &direct_methods_size);
+
+        uint64_t virtual_methods_size = 0;
+        read += DexFileUtils::readUleb128(class_data + read, &virtual_methods_size);
+
+        read += DexFileUtils::getFieldsSize(class_data + read, static_fields_size);
+        read += DexFileUtils::getFieldsSize(class_data + read, instance_fields_size);
+
+        auto *directMethods = new dex::ClassDataMethod[direct_methods_size];
+        read += DexFileUtils::readMethods(class_data + read, directMethods, direct_methods_size);
+
+        auto *virtualMethods = new dex::ClassDataMethod[virtual_methods_size];
+        read += DexFileUtils::readMethods(class_data + read, virtualMethods, virtual_methods_size);
+
+        for (uint64_t i = 0; i < direct_methods_size; i++) {
+            if (directMethods[i].code_off_ != 0) methodCandidates++;
+            patchMethod(begin, location, dexSize, dexIndex,
+                        directMethods[i].method_idx_delta_, directMethods[i].code_off_);
+        }
+        for (uint64_t i = 0; i < virtual_methods_size; i++) {
+            if (virtualMethods[i].code_off_ != 0) methodCandidates++;
+            patchMethod(begin, location, dexSize, dexIndex,
+                        virtualMethods[i].method_idx_delta_, virtualMethods[i].code_off_);
+        }
+
+        delete[] directMethods;
+        delete[] virtualMethods;
+    }
+    return methodCandidates;
+}
+
+// 预还原:从 DexPathList$Element[] 的 DexFile cookie 里取出每个 art::DexFile*,
+// 在应用类被校验之前一次性还原所有受保护 dex 的 code item。
+// 仅在 LoadClass 降级路径下调用(Android 16+ 类加载 hook 命中不全),用于补齐
+// hook 覆盖不到的 dex(如作为父类被链接解析的 Application 基类所在 dex)。
+DPT_ENCRYPT
+void patchAllProtectedDexes(JNIEnv *env, jobjectArray dexElements) {
+    if (env == nullptr || dexElements == nullptr) {
+        return;
+    }
+
+    jclass elementClass = env->FindClass("dalvik/system/DexPathList$Element");
+    if (env->ExceptionCheck()) { env->ExceptionClear(); return; }
+    jfieldID dexFileField = env->GetFieldID(elementClass, "dexFile", "Ldalvik/system/DexFile;");
+    if (env->ExceptionCheck()) { env->ExceptionClear(); return; }
+    jclass dexFileClass = env->FindClass("dalvik/system/DexFile");
+    if (env->ExceptionCheck()) { env->ExceptionClear(); return; }
+    jfieldID cookieField = env->GetFieldID(dexFileClass, "mCookie", "Ljava/lang/Object;");
+    if (env->ExceptionCheck()) { env->ExceptionClear(); return; }
+
+    [[maybe_unused]] int restoredDexCount = 0;
+    jsize elemCount = env->GetArrayLength(dexElements);
+    for (jsize e = 0; e < elemCount; e++) {
+        jobject elementObj = env->GetObjectArrayElement(dexElements, e);
+        if (elementObj == nullptr) {
+            continue;
+        }
+        jobject dexFileObj = env->GetObjectField(elementObj, dexFileField);
+        jobject cookieObj = (dexFileObj != nullptr)
+                            ? env->GetObjectField(dexFileObj, cookieField) : nullptr;
+
+        if (cookieObj != nullptr) {
+            auto cookieArr = (jlongArray) cookieObj;
+            jsize n = env->GetArrayLength(cookieArr);
+            jlong *longs = env->GetLongArrayElements(cookieArr, nullptr);
+            if (longs != nullptr) {
+                DLOGI("eager: element[%d] cookie length = %d", e, n);
+                // cookie[0] 是 oat 文件指针;cookie[1..] 为 art::DexFile*,且严格按
+                // dex 在 zip 内的顺序排列(classes.dex, classes2.dex, ...),与抽取顺序、
+                // 也就是 dexMap 的 key 0..6 一一对应。
+                //
+                // 关键:不要再用 parse_dex_number(location) 推断 dexIndex —— 在
+                // Android 17 上 DexFile.location_ 不再带 "!classesN.dex" 后缀,会导致
+                // 所有 dex 都被解析成 index 0,只有 dex0 被正确还原(这正是 A16 有十几次
+                // change_dex_protective、A17 只有 1 次的根因)。改为按 cookie 顺序分配。
+                for (jsize k = 1; k < n; k++) {
+                    auto dexFilePtr = (const void *) (intptr_t) longs[k];
+                    if (dexFilePtr == nullptr) {
+                        continue;
+                    }
+                    // begin_ 在 V21/V28/V35 里都紧跟 vtable(偏移 8),先取出做 magic 校验,
+                    // 确认是真正的 DexFile*,避免误把其它指针当 dex 解析导致崩溃。
+                    auto *begin = (uint8_t *) ((V35::DexFile *) dexFilePtr)->begin_;
+                    if (begin == nullptr ||
+                        !(begin[0] == 'd' && begin[1] == 'e' && begin[2] == 'x' && begin[3] == '\n')) {
+                        DLOGI("eager: cookie[%d] begin=%p not a dex, skip", k, begin);
+                        continue;
+                    }
+
+                    std::string location;
+                    uint64_t dexSize = 0;
+                    if (g_sdkLevel >= 35) {
+                        auto *d = (V35::DexFile *) dexFilePtr;
+                        location = d->location_;
+                        dexSize = d->header_ != nullptr ? d->header_->file_size_ : 0;
+                    } else if (g_sdkLevel >= __ANDROID_API_P__) {
+                        auto *d = (V28::DexFile *) dexFilePtr;
+                        location = d->location_;
+                        dexSize = d->size_ == 0 ? d->header_->file_size_ : d->size_;
+                    } else {
+                        auto *d = (V21::DexFile *) dexFilePtr;
+                        location = d->location_;
+                        dexSize = d->size_ == 0 ? d->header_->file_size_ : d->size_;
+                    }
+
+                    if (location.rfind(DEXES_ZIP_NAME) == std::string::npos) {
+                        DLOGI("eager: cookie[%d] not protected zip, loc=%s", k, location.c_str());
+                        continue;
+                    }
+
+                    // 用(已修复的)parse_dex_number 从 location 的 "!N" 后缀解析下标,
+                    // 与 dexMap key 严格对齐。不用 cookie 顺序:cookie 里可能混入额外/非
+                    // 受保护 dex,按顺序会整体错位。
+                    int dexIndex = parse_dex_number(location);
+                    if (dexMap.find(dexIndex) == dexMap.end()) {
+                        DLOGI("eager: dex index %d (loc=%s) not in dexMap, skip", dexIndex, location.c_str());
+                        continue;
+                    }
+                    [[maybe_unused]] int candidates =
+                            patchAllClassesInDex(begin, location.c_str(), dexSize, dexIndex);
+                    DLOGI("eager restore dex[%d] begin=%p size=%llu candidates=%d loc=%s",
+                          dexIndex, begin, (unsigned long long) dexSize, candidates, location.c_str());
+                    restoredDexCount++;
+                }
+                env->ReleaseLongArrayElements(cookieArr, longs, JNI_ABORT);
+            }
+            env->DeleteLocalRef(cookieObj);
+        }
+
+        if (dexFileObj != nullptr) {
+            env->DeleteLocalRef(dexFileObj);
+        }
+        env->DeleteLocalRef(elementObj);
+    }
+    DLOGI("patchAllProtectedDexes done, eager restored %d dex(es), dexMap size = %zu",
+          restoredDexCount, dexMap.size());
 }
 
 DPT_ENCRYPT void LoadClassV23(void* thiz,

@@ -77,4 +77,5 @@ const char* getThreadName();
 
 std::string to_hex(const uint8_t* data, size_t length);
 
+
 #endif //DPT_DPT_UTIL_H
