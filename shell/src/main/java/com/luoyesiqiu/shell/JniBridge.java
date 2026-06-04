@@ -16,7 +16,6 @@ import java.io.File;
 public class JniBridge {
     private static final String TAG = "dpt_" + JniBridge.class.getSimpleName();
     public static native void craoc(String applicationClassName);
-    public static native void craa(Context context, String applicationClassName);
     public static native void ia();
     public static native String rcf();
     public static native void cbde(ClassLoader targetClassLoader);

@@ -22,7 +22,6 @@ public class ProxyApplication extends Application {
             realApplication = (Application) JniBridge.ra(realApplicationName);
             Log.d(TAG, "applicationExchange: " + realApplicationName + ", realApplication: " + realApplication.getClass().getName());
 
-            JniBridge.craa(getApplicationContext(), realApplicationName);
             JniBridge.craoc(realApplicationName);
             Global.sNeedCalledApplication = false;
         }

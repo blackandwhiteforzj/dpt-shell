@@ -51,9 +51,6 @@ struct ShellConfig {
 
 void callRealApplicationOnCreate(JNIEnv *env, jclass, jstring realApplicationClassName);
 
-void callRealApplicationAttach(JNIEnv *env, jclass, jobject context,
-                                         jstring realApplicationClassName);
-
 INIT_ARRAY_SECTION void init_dpt();
 void init_app(JNIEnv* env,jclass __unused);
 void readCodeItem(uint8_t *data,size_t data_len);
@@ -65,7 +62,7 @@ void combineDexElements(JNIEnv* env, jclass __unused klass, jobject targetClassL
 void removeDexElements(JNIEnv* env,jclass __unused,jobject classLoader,jstring elementName);
 jobject replaceApplication(JNIEnv *env, jclass __unused, jstring originApplication);
 void replaceApplicationOnActivityThread(JNIEnv *env,jclass __unused, jobject realApplication);
-void replaceApplicationOnLoadedApk(JNIEnv *env, jclass __unused, jobject realApplication);
+jobject replaceApplicationOnLoadedApk(JNIEnv *env, jclass __unused, jstring realApplicationClassName);
 
 void veritySignature(JNIEnv *env);
 
