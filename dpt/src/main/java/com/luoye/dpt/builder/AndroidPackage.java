@@ -662,10 +662,7 @@ public abstract class AndroidPackage {
                 try {
                     DexUtils.injectInvokeMethod(dexFile.getAbsolutePath(),
                             injectedDexFile.getAbsolutePath(),
-                            shellConfig.getJniClassNameSig(),
-                            "clinit",
-                            new ArrayList<>(),
-                            "V"
+                            shellConfig.getJniClassNameSig()
                     );
 
                     dexFile.delete();
@@ -673,7 +670,6 @@ public abstract class AndroidPackage {
                     injectedDexFile.renameTo(dexFile);
                 }
                 catch (Exception e) {
-                    LogUtils.warn("WARNING: inject %s fail", dexFile.getName());
                     injectedDexFile.delete();
                 }
 

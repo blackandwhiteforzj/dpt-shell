@@ -5,15 +5,10 @@ import com.android.dex.ClassDef;
 import com.android.dex.Code;
 import com.android.dex.Dex;
 import com.android.tools.smali.dexlib2.DexFileFactory;
-import com.android.tools.smali.dexlib2.Opcode;
 import com.android.tools.smali.dexlib2.Opcodes;
 import com.android.tools.smali.dexlib2.dexbacked.DexBackedDexFile;
 import com.android.tools.smali.dexlib2.iface.DexFile;
-import com.android.tools.smali.dexlib2.iface.Method;
-import com.android.tools.smali.dexlib2.iface.MethodImplementation;
 import com.android.tools.smali.dexlib2.immutable.*;
-import com.android.tools.smali.dexlib2.immutable.instruction.ImmutableInstruction35c;
-import com.android.tools.smali.dexlib2.immutable.reference.ImmutableMethodReference;
 import com.android.tools.smali.dexlib2.rewriter.DexRewriter;
 import com.android.tools.smali.dexlib2.rewriter.Rewriter;
 import com.android.tools.smali.dexlib2.rewriter.RewriterModule;
@@ -21,6 +16,7 @@ import com.android.tools.smali.dexlib2.rewriter.Rewriters;
 import com.android.tools.smali.dexlib2.rewriter.TypeRewriter;
 import com.luoye.dpt.config.ProtectRules;
 import com.luoye.dpt.config.ShellConfig;
+import com.luoye.dpt.dex.ReflectionClinitInjector;
 import com.luoye.dpt.model.Instruction;
 
 import org.apache.commons.lang3.tuple.ImmutablePair;
@@ -46,125 +42,12 @@ import java.util.regex.Pattern;
 public class DexUtils {
     private final static Map<String,Integer> codeOffAppearMap = new ConcurrentHashMap<>();
 
-    public static void injectInvokeMethod( String inputDex, String outputDex, String jniClass, String jniMethodName, List<String> parameterTypes, String returnType) throws IOException {
-        File inputFile = new File(inputDex);
-        DexBackedDexFile dexFile = DexFileFactory.loadDexFile(inputFile, Opcodes.getDefault());
-
-        DexRewriter rewriter = new DexRewriter(new RewriterModule() {
-            @Override
-            public Rewriter<DexFile> getDexFileRewriter(Rewriters rewriters) {
-                return new Rewriter<DexFile>() {
-                    @Override
-                    public DexFile rewrite(DexFile value) {
-                        Set<com.android.tools.smali.dexlib2.iface.ClassDef> newClasses = new HashSet<>();
-                        for (com.android.tools.smali.dexlib2.iface.ClassDef classDef : value.getClasses()) {
-                            List<Method> newMethods = new ArrayList<>();
-                            for (Method method : classDef.getMethods()) {
-
-                                if ("<clinit>".equals(method.getName())) {
-                                    MethodImplementation implementation = method.getImplementation();
-
-                                    if (implementation != null) {
-                                        // Check if the method contains fill-array-data instruction, skip if found
-                                        boolean hasFillArrayData = false;
-                                        for (com.android.tools.smali.dexlib2.iface.instruction.Instruction instruction : implementation.getInstructions()) {
-                                            if (instruction.getOpcode() == Opcode.FILL_ARRAY_DATA) {
-                                                hasFillArrayData = true;
-                                                break;
-                                            }
-                                        }
-
-                                        // Check if the method has TryBlocks, skip if found
-                                        boolean hasTryBlocks = !implementation.getTryBlocks().isEmpty();
-
-                                        // Collect original instructions
-                                        List<com.android.tools.smali.dexlib2.iface.instruction.Instruction> originalInstructions = new ArrayList<>();
-                                        for (com.android.tools.smali.dexlib2.iface.instruction.Instruction instruction : implementation.getInstructions()) {
-                                            originalInstructions.add(instruction);
-                                        }
-
-                                        // Check if the last instruction is return-void
-                                        boolean lastIsReturnVoid = !originalInstructions.isEmpty() &&
-                                                originalInstructions.get(originalInstructions.size() - 1).getOpcode() == Opcode.RETURN_VOID;
-
-                                        if (hasFillArrayData || hasTryBlocks || !lastIsReturnVoid) {
-                                            // Skip processing this method due to offset issues or last instruction is not return-void
-                                            newMethods.add(method);
-                                        } else {
-                                            List<com.android.tools.smali.dexlib2.iface.instruction.Instruction> newInstructions = new ArrayList<>();
-
-                                            ImmutableMethodReference loadLibraryMethod = new ImmutableMethodReference(
-                                                    jniClass,
-                                                    jniMethodName,
-                                                    parameterTypes,
-                                                    returnType
-                                            );
-
-
-                                            ImmutableInstruction35c invokeStatic = new ImmutableInstruction35c(
-                                                    Opcode.INVOKE_STATIC,
-                                                    0,
-                                                    0, 0, 0, 0, 0,
-                                                    loadLibraryMethod
-                                            );
-
-                                            // Insert invoke-static before the last return-void
-                                            for (int i = 0; i < originalInstructions.size() - 1; i++) {
-                                                newInstructions.add(originalInstructions.get(i));
-                                            }
-                                            newInstructions.add(invokeStatic);
-                                            newInstructions.add(originalInstructions.get(originalInstructions.size() - 1));
-
-                                            int registerCount = Math.max(implementation.getRegisterCount(), 1);
-
-                                            MethodImplementation newImplementation = new ImmutableMethodImplementation(
-                                                    registerCount,
-                                                    newInstructions,
-                                                    implementation.getTryBlocks(),
-                                                    implementation.getDebugItems()
-                                            );
-
-                                            Method newMethod = new ImmutableMethod(
-                                                    method.getDefiningClass(),
-                                                    method.getName(),
-                                                    method.getParameters(),
-                                                    method.getReturnType(),
-                                                    method.getAccessFlags(),
-                                                    method.getAnnotations(),
-                                                    method.getHiddenApiRestrictions(),
-                                                    newImplementation
-                                            );
-                                            newMethods.add(newMethod);
-                                        }
-                                    } else {
-                                        newMethods.add(method);
-                                    }
-                                } else {
-                                    newMethods.add(method);
-                                }
-                            }
-
-                            com.android.tools.smali.dexlib2.iface.ClassDef newClassDef =
-                                    new com.android.tools.smali.dexlib2.immutable.ImmutableClassDef   (
-                                            classDef.getType(),
-                                            classDef.getAccessFlags(),
-                                            classDef.getSuperclass(),
-                                            classDef.getInterfaces(),
-                                            classDef.getSourceFile(),
-                                            classDef.getAnnotations(),
-                                            classDef.getFields(),
-                                            newMethods
-                                    );
-                            newClasses.add(newClassDef);
-                        }
-                        return new ImmutableDexFile(value.getOpcodes(), newClasses);
-                    }
-                };
-            }
-        });
-
-        DexFile rewrittenDex = rewriter.getDexFileRewriter().rewrite(dexFile);
-        DexFileFactory.writeDexFile(outputDex, rewrittenDex);
+    /**
+     * Inject reflection-based JniBridge.clinit calls into eligible static initializers.
+     * Helper methods are generated via dexlib2 and spread across different classes.
+     */
+    public static void injectInvokeMethod(String inputDex, String outputDex, String jniClass) throws IOException {
+        ReflectionClinitInjector.inject(inputDex, outputDex, jniClass);
     }
 
     /**
