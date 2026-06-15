@@ -673,7 +673,13 @@ public abstract class AndroidPackage {
                     injectedDexFile.delete();
                 }
 
-                if(isKeepClasses()) {
+                if(isKeepClasses() && DexUtils.dexContainsKeepInPlace(dexFile)) {
+                    // 含 Compose 等“原地保留”类的 dex 整体跳过 split：
+                    // 二分重写会破坏 Compose interface 的跨 dex 链接，引发 IncompatibleClassChangeError。
+                    // 该 dex 仍会走 extractAllMethods 抽取（其中匹配规则的类自动跳过），只是不拆分。
+                    LogUtils.info("Skip split for dex with keep-in-place classes (e.g. Compose): %s", dexFile.getName());
+                }
+                else if(isKeepClasses()) {
                     File keepDex = new File(getKeepDexTempDir(packageDir).getAbsolutePath() + File.separator + dexFile.getName());
                     File splitDex = new File(dexFile.getAbsolutePath() + "_split.dex");
 

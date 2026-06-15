@@ -43,6 +43,48 @@ public class DexUtils {
     private final static Map<String,Integer> codeOffAppearMap = new ConcurrentHashMap<>();
 
     /**
+     * 这些前缀的类必须“原地保留”：开启 -K(keep-classes) 时，它们既不抽取方法体，
+     * 也不能被搬动到独立的 keep dex —— 否则会改变其 dex 归属，破坏 Compose 等框架
+     * 对 interface default 方法的跨 dex 链接，导致启动时 IncompatibleClassChangeError 崩溃。
+     */
+    private static final String[] KEEP_IN_PLACE_PREFIXES = {
+            "Landroidx/compose/",
+    };
+
+    private static boolean keepInPlace(String type) {
+        if (type == null) {
+            return false;
+        }
+        for (String prefix : KEEP_IN_PLACE_PREFIXES) {
+            if (type.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 判断一个 dex 是否包含“原地保留”的类（如 Compose）。
+     * 含有这类类的 dex 必须整体跳过 split：splitDex 的二分重写会改变 dex 的类布局/类型表，
+     * 破坏 Compose interface 的跨 dex 链接，导致运行时 IncompatibleClassChangeError。
+     */
+    public static boolean dexContainsKeepInPlace(File dexFile) {
+        try {
+            DexBackedDexFile dex = DexFileFactory.loadDexFile(dexFile, Opcodes.getDefault());
+            for (com.android.tools.smali.dexlib2.iface.ClassDef classDef : dex.getClasses()) {
+                if (keepInPlace(classDef.getType())) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            LogUtils.warn("check keep-in-place failed for %s, will skip split to be safe: %s",
+                    dexFile.getName(), e);
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * Inject reflection-based JniBridge.clinit calls into eligible static initializers.
      * Helper methods are generated via dexlib2 and spread across different classes.
      */
