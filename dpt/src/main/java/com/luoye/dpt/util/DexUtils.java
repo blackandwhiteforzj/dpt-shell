@@ -43,9 +43,10 @@ public class DexUtils {
     private final static Map<String,Integer> codeOffAppearMap = new ConcurrentHashMap<>();
 
     /**
-     * 这些前缀的类必须“原地保留”：开启 -K(keep-classes) 时，它们既不抽取方法体，
-     * 也不能被搬动到独立的 keep dex —— 否则会改变其 dex 归属，破坏 Compose 等框架
-     * 对 interface default 方法的跨 dex 链接，导致启动时 IncompatibleClassChangeError 崩溃。
+     * Classes with these prefixes must be kept in place: with -K(keep-classes) they are
+     * neither extracted nor moved to a separate keep dex. Moving them would change their
+     * dex membership and break ART's cross-dex linking of interface default methods
+     * (e.g. in Compose), causing IncompatibleClassChangeError at launch.
      */
     private static final String[] KEEP_IN_PLACE_PREFIXES = {
             "Landroidx/compose/",
@@ -64,9 +65,10 @@ public class DexUtils {
     }
 
     /**
-     * 判断一个 dex 是否包含“原地保留”的类（如 Compose）。
-     * 含有这类类的 dex 必须整体跳过 split：splitDex 的二分重写会改变 dex 的类布局/类型表，
-     * 破坏 Compose interface 的跨 dex 链接，导致运行时 IncompatibleClassChangeError。
+     * Returns whether a dex contains "keep-in-place" classes (e.g. Compose).
+     * Such a dex must skip splitting entirely: the re-partition in splitDex rewrites the
+     * dex's class layout / type tables and breaks Compose's cross-dex interface linking,
+     * causing IncompatibleClassChangeError at runtime.
      */
     public static boolean dexContainsKeepInPlace(File dexFile) {
         try {

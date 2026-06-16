@@ -674,9 +674,9 @@ public abstract class AndroidPackage {
                 }
 
                 if(isKeepClasses() && DexUtils.dexContainsKeepInPlace(dexFile)) {
-                    // 含 Compose 等“原地保留”类的 dex 整体跳过 split：
-                    // 二分重写会破坏 Compose interface 的跨 dex 链接，引发 IncompatibleClassChangeError。
-                    // 该 dex 仍会走 extractAllMethods 抽取（其中匹配规则的类自动跳过），只是不拆分。
+                    // Skip split entirely for dexes containing keep-in-place classes (e.g. Compose):
+                    // the re-partition would break Compose's cross-dex interface linking and cause IncompatibleClassChangeError.
+                    // The dex still goes through extractAllMethods (rule-matched classes are skipped as usual); it is just not split.
                     LogUtils.info("Skip split for dex with keep-in-place classes (e.g. Compose): %s", dexFile.getName());
                 }
                 else if(isKeepClasses()) {
