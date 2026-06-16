@@ -673,7 +673,13 @@ public abstract class AndroidPackage {
                     injectedDexFile.delete();
                 }
 
-                if(isKeepClasses()) {
+                if(isKeepClasses() && DexUtils.dexContainsKeepInPlace(dexFile)) {
+                    // Skip split entirely for dexes containing keep-in-place classes (e.g. Compose):
+                    // the re-partition would break Compose's cross-dex interface linking and cause IncompatibleClassChangeError.
+                    // The dex still goes through extractAllMethods (rule-matched classes are skipped as usual); it is just not split.
+                    LogUtils.info("Skip split for dex with keep-in-place classes (e.g. Compose): %s", dexFile.getName());
+                }
+                else if(isKeepClasses()) {
                     File keepDex = new File(getKeepDexTempDir(packageDir).getAbsolutePath() + File.separator + dexFile.getName());
                     File splitDex = new File(dexFile.getAbsolutePath() + "_split.dex");
 

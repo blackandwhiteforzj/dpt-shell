@@ -43,6 +43,50 @@ public class DexUtils {
     private final static Map<String,Integer> codeOffAppearMap = new ConcurrentHashMap<>();
 
     /**
+     * Classes with these prefixes must be kept in place: with -K(keep-classes) they are
+     * neither extracted nor moved to a separate keep dex. Moving them would change their
+     * dex membership and break ART's cross-dex linking of interface default methods
+     * (e.g. in Compose), causing IncompatibleClassChangeError at launch.
+     */
+    private static final String[] KEEP_IN_PLACE_PREFIXES = {
+            "Landroidx/compose/",
+    };
+
+    private static boolean keepInPlace(String type) {
+        if (type == null) {
+            return false;
+        }
+        for (String prefix : KEEP_IN_PLACE_PREFIXES) {
+            if (type.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Returns whether a dex contains "keep-in-place" classes (e.g. Compose).
+     * Such a dex must skip splitting entirely: the re-partition in splitDex rewrites the
+     * dex's class layout / type tables and breaks Compose's cross-dex interface linking,
+     * causing IncompatibleClassChangeError at runtime.
+     */
+    public static boolean dexContainsKeepInPlace(File dexFile) {
+        try {
+            DexBackedDexFile dex = DexFileFactory.loadDexFile(dexFile, Opcodes.getDefault());
+            for (com.android.tools.smali.dexlib2.iface.ClassDef classDef : dex.getClasses()) {
+                if (keepInPlace(classDef.getType())) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            LogUtils.warn("check keep-in-place failed for %s, will skip split to be safe: %s",
+                    dexFile.getName(), e);
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * Inject reflection-based JniBridge.clinit calls into eligible static initializers.
      * Helper methods are generated via dexlib2 and spread across different classes.
      */
