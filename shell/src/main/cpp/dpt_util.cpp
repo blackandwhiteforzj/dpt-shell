@@ -587,6 +587,7 @@ DPT_ENCRYPT int find_in_maps(int count, ...) {
             va_end(ap);
 
         }
+        fclose(fp);
     }
 
     return found;
