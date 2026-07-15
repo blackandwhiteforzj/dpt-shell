@@ -208,13 +208,21 @@ void decrypt_section(const char* section_name, int temp_prot, int target_prot) {
     Dl_info info;
     dladdr((const void *)decrypt_section,&info);
     std::string so_path = {};
-    if(strstr(info.dli_fname, "/data") != nullptr) {
-        so_path.assign(info.dli_fname);
+
+    if (info.dli_fname != nullptr) {
+        if (info.dli_fname[0] == '/') {
+            so_path.assign(info.dli_fname);
+        } else {
+            auto path = find_so_path(info.dli_fname);
+            so_path.assign(path);
+        }
     }
-    else {
-        auto path = find_so_path("libdpt.so");
+
+    if(so_path.empty()) {
+        auto path = find_so_path(SO_NAME);
         so_path.assign(path);
     }
+
     Elf_Shdr shdr = {};
 
     get_elf_section(&shdr, so_path.c_str(), section_name);

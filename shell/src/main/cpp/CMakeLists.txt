@@ -82,6 +82,7 @@ endif()
 message("so name: ${SO_NAME}")
 
 add_compile_definitions(JNI_BRIDGE_NAME="${JNI_BRIDGE_NAME}")
+add_compile_definitions(SO_NAME="lib${SO_NAME}.so")
 
 include_directories(./ )
 include_directories(./common)
