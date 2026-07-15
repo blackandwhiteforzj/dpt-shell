@@ -480,7 +480,7 @@ DPT_ENCRYPT void readCodeItem(uint8_t *data,size_t data_len) {
     }
 }
 
-void read_shell_config(JNIEnv *env) {
+DPT_ENCRYPT void read_shell_config(JNIEnv *env) {
     void *package_addr = nullptr;
     size_t package_size = 0;
     load_package(env, &package_addr, &package_size);
