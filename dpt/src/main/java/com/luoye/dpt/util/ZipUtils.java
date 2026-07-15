@@ -42,6 +42,8 @@ public class ZipUtils {
             "assets/" + Const.KEY_CODE_ITEM_STORE_NAME
     );
 
+    private static final String META_INF_NAME = "META-INF";
+
 
     /**
      * don not compress file list
@@ -370,6 +372,9 @@ public class ZipUtils {
 
     private static void compressDir(File dir, ZipOutputStream zos, String basePath,
                                     List<String> doNotCompress, Map<String, String> resConflictFiles) throws Exception {
+        if(dir.getName().equals(META_INF_NAME)){
+            return;
+        }
         File[] files = dir.listFiles();
         if (files == null) {
             return;

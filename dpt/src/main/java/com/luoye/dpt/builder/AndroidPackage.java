@@ -854,7 +854,7 @@ public abstract class AndroidPackage {
 
         String resultPath = signedPackageFile.exists() ? signedPackageFile.getAbsolutePath() : willSignPackageFile.getAbsolutePath();
 
-        if (signedPackageFile.exists() && willSignPackageFile.exists()) {
+        if (signResult && willSignPackageFile.exists()) {
             willSignPackageFile.delete();
         }
 
