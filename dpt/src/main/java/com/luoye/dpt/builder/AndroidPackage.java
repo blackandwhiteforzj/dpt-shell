@@ -707,11 +707,19 @@ public abstract class AndroidPackage {
                 instructionMap.put(dexNo, ret);
 
                 File dexFileRightHashes = new File(dexFile.getParent(), FileUtils.getNewFileSuffix(dexFile.getName(),"dat"));
-                DexUtils.writeHashes(extractedDexFile,dexFileRightHashes);
-                dexFile.delete();
 
-                extractedDexFile.delete();
-                dexFileRightHashes.renameTo(dexFile);
+                try {
+                    DexUtils.writeHashes(extractedDexFile, dexFileRightHashes);
+                    dexFile.delete();
+                    dexFileRightHashes.renameTo(dexFile);
+                }
+                catch (Exception e) {
+                }
+                finally {
+                    if(extractedDexFile.exists()) {
+                        extractedDexFile.delete();
+                    }
+                }
 
                 if("classes.dex".equals(dexFile.getName())) {
                     String dexSignature = DexUtils.getDexSignature(dexFile);

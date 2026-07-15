@@ -4,6 +4,7 @@ import com.android.dex.ClassData;
 import com.android.dex.ClassDef;
 import com.android.dex.Code;
 import com.android.dex.Dex;
+import com.android.dex.DexException;
 import com.android.tools.smali.dexlib2.DexFileFactory;
 import com.android.tools.smali.dexlib2.Opcodes;
 import com.android.tools.smali.dexlib2.dexbacked.DexBackedDexFile;
@@ -444,12 +445,15 @@ public class DexUtils {
             dex.writeTo(newDexFile);
         }
         catch (Exception e){
-            e.printStackTrace();
+            throw new DexException("Cannot write dex hashes");
         }
     }
 
     public static String getDexSignature(File dexFile) {
         byte[] dexData = IoUtils.readFile(dexFile.getAbsolutePath());
+        if(dexData.length <= 29) {
+            return null;
+        }
         byte[] signature = new byte[20];
         ByteBuffer.wrap(dexData).position(9).get(signature);
         return HexUtils.toHexString(signature);
