@@ -169,7 +169,7 @@ public class Aab extends AndroidPackage {
         //aab extract path
         String aabMainProcessPath = aab.getWorkspaceDir().getAbsolutePath();
 
-        LogUtils.info("Aab path: " + aabMainProcessPath);
+        LogUtils.info("Workspace path: " + aabMainProcessPath);
 
         ZipUtils.unZip(aab.getFilePath(), aabMainProcessPath);
         String manifestFilePath = aab.getManifestFilePath(aabMainProcessPath);

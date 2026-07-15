@@ -175,7 +175,7 @@ public class Apk extends AndroidPackage {
         //apk extract path
         String apkMainProcessPath = apk.getWorkspaceDir().getAbsolutePath();
 
-        LogUtils.info("Apk path: " + apkMainProcessPath);
+        LogUtils.info("Workspace path: " + apkMainProcessPath);
 
         ZipUtils.unZip(apk.getFilePath(),apkMainProcessPath);
 
