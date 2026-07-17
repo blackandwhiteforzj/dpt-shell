@@ -1,13 +1,19 @@
 package com.luoye.dpt.util;
 
+import java.nio.charset.StandardCharsets;
+import java.security.InvalidKeyException;
 import java.security.Key;
+import java.security.NoSuchAlgorithmException;
 
 import javax.crypto.Cipher;
+import javax.crypto.Mac;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 public class CryptoUtils {
     public static final String RC4Transform = "RC4";
+    private static final String HMAC_SHA256 = "HmacSHA256";
+
     public static byte[] rc4Crypt(byte[] key, byte[] in) {
         try {
             Cipher cipher = Cipher.getInstance(RC4Transform);
@@ -18,6 +24,29 @@ public class CryptoUtils {
         }
 
         return null;
+    }
+
+    /**
+     * Derive AES-256 key by HMAC-SHA256(randomKey, UTF-8(packageName)).
+     */
+    public static byte[] hmacSha256(byte[] key, String packageName) {
+        if (key == null || key.length == 0) {
+            throw new IllegalArgumentException("hmac key is empty");
+        }
+        if (packageName == null || packageName.isEmpty()) {
+            throw new IllegalArgumentException("package name is empty");
+        }
+        try {
+            Mac mac = Mac.getInstance(HMAC_SHA256);
+            mac.init(new SecretKeySpec(key, HMAC_SHA256));
+            byte[] result = mac.doFinal(packageName.getBytes(StandardCharsets.UTF_8));
+            if (result == null || result.length != 32) {
+                throw new IllegalStateException("unexpected hmac length");
+            }
+            return result;
+        } catch (NoSuchAlgorithmException | InvalidKeyException e) {
+            throw new IllegalStateException("hmac-sha256 failed", e);
+        }
     }
 
     public static byte[] aesEncrypt(byte[] key, byte[] iv, byte[] in) {

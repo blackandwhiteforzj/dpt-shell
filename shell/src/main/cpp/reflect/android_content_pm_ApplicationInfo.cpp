@@ -16,6 +16,11 @@ jstring android_content_pm_ApplicationInfo::getDataDir() {
     return dataDir;
 }
 
+jstring android_content_pm_ApplicationInfo::getPackageName() {
+    auto packageName = (jstring)jni::GetObjectField(m_env,m_obj,&package_name_field);
+    return packageName;
+}
+
 void android_content_pm_ApplicationInfo::setClassName(jobject className) {
     jni::SetObjectField(m_env,m_obj,&class_name_field,className);
 }

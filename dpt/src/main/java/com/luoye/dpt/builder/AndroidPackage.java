@@ -344,12 +344,21 @@ public abstract class AndroidPackage {
     }
 
     public void writeConfig(String packageDir, byte[] key) {
+        String packageName = getPackageName();
+        if (packageName == null || packageName.isEmpty()) {
+            throw new IllegalStateException("package name is empty, cannot derive config aes key");
+        }
         File configFile = new File(getOutAssetsDir(packageDir).getAbsolutePath() + File.separator + Const.KEY_SHELL_CONFIG_STORE_NAME);
         ShellConfig shellConfig = ShellConfig.getInstance();
         String json = shellConfig.toJson();
         LogUtils.info("Write config: " + json);
+        LogUtils.info("Derive config aes key with package: " + packageName);
+        byte[] aesKey = CryptoUtils.hmacSha256(key, packageName);
         byte[] iv = KeyUtils.generateIV(key);
-        byte[] secData = CryptoUtils.aesEncrypt(key, iv, json.getBytes(StandardCharsets.UTF_8));
+        byte[] secData = CryptoUtils.aesEncrypt(aesKey, iv, json.getBytes(StandardCharsets.UTF_8));
+        if (secData == null) {
+            throw new IllegalStateException("encrypt shell config failed");
+        }
         IoUtils.writeFile(configFile.getAbsolutePath(), secData);
     }
 

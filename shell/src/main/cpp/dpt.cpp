@@ -489,6 +489,53 @@ DPT_ENCRYPT void read_shell_config(JNIEnv *env) {
     if(entry.has_value()) {
         auto [entry_data, entry_size] = entry.value();
         if(entry_size > 0) {
+            reflect::android_app_ActivityThread activityThread(env);
+            jobject mBoundApplicationObj = activityThread.getBoundApplication();
+            if (mBoundApplicationObj == nullptr) {
+                DLOGE("bound application is null");
+                unload_package(package_addr, package_size);
+                return;
+            }
+
+            reflect::android_app_ActivityThread::AppBindData appBindData(env, mBoundApplicationObj);
+            jobject appInfoObj = appBindData.getAppInfo();
+            if (appInfoObj == nullptr) {
+                DLOGE("app info is null");
+                unload_package(package_addr, package_size);
+                return;
+            }
+
+            reflect::android_content_pm_ApplicationInfo applicationInfo(env, appInfoObj);
+            jstring packageNameJstr = applicationInfo.getPackageName();
+            if (packageNameJstr == nullptr) {
+                DLOGE("package name is null");
+                unload_package(package_addr, package_size);
+                return;
+            }
+
+            const char *packageNameChs = env->GetStringUTFChars(packageNameJstr, nullptr);
+            if (packageNameChs == nullptr || packageNameChs[0] == '\0') {
+                DLOGE("package name is empty");
+                if (packageNameChs != nullptr) {
+                    env->ReleaseStringUTFChars(packageNameJstr, packageNameChs);
+                }
+                unload_package(package_addr, package_size);
+                return;
+            }
+
+            std::string packageName(packageNameChs);
+            env->ReleaseStringUTFChars(packageNameJstr, packageNameChs);
+            DLOGD("package name for config key: %s", packageName.c_str());
+
+            auto aes_key = hmac_sha256(DPT_UNKNOWN_DATA,
+                                       16,
+                                       reinterpret_cast<const uint8_t *>(packageName.data()),
+                                       packageName.size());
+            if (aes_key.size() != 32) {
+                DLOGE("derive config aes key failed");
+                unload_package(package_addr, package_size);
+                return;
+            }
 
             std::vector<uint8_t> indata(entry_data, entry_data + entry_size);
 
@@ -496,26 +543,34 @@ DPT_ENCRYPT void read_shell_config(JNIEnv *env) {
             memcpy(iv, DPT_UNKNOWN_DATA, 16);
             iv[3] = 0x2f;
             iv[9] = 0x76;
-            auto decrypted_data = aes_cbc_decrypt(DPT_UNKNOWN_DATA, iv, indata.data(), entry_size);
-            std::string jsonStr = std::string(decrypted_data.begin(), decrypted_data.end());
+            auto decrypted_data = aes_cbc_decrypt(aes_key.data(), 256, iv, indata.data(), entry_size);
+            if (decrypted_data.empty()) {
+                DLOGE("decrypt shell config failed");
+                unload_package(package_addr, package_size);
+                return;
+            }
 
-            DLOGD("raw config: '%s'", jsonStr.c_str());
+            try {
+                std::string jsonStr = std::string(decrypted_data.begin(), decrypted_data.end());
+                DLOGD("raw config: '%s'", jsonStr.c_str());
 
-            nlohmann::json shell_config = nlohmann::json::parse(jsonStr);
-            g_shell_config.application_name = shell_config.value("app_name", "");
-            g_shell_config.application_component_factory = shell_config.value("acf_name", "");
-            g_shell_config.jni_class_name = shell_config.value("jni_cls_name", "");
-            g_shell_config.app_sign_sha256 = shell_config.value("app_sign_sha256", "");
-            g_shell_config.dex_sign = shell_config.value("dex_sign", "");
-            g_shell_config.insns_xor_key = shell_config.value("insns_xor_key", 0);
+                nlohmann::json shell_config = nlohmann::json::parse(jsonStr);
+                g_shell_config.application_name = shell_config.value("app_name", "");
+                g_shell_config.application_component_factory = shell_config.value("acf_name", "");
+                g_shell_config.jni_class_name = shell_config.value("jni_cls_name", "");
+                g_shell_config.app_sign_sha256 = shell_config.value("app_sign_sha256", "");
+                g_shell_config.dex_sign = shell_config.value("dex_sign", "");
+                g_shell_config.insns_xor_key = shell_config.value("insns_xor_key", 0);
 
-            DLOGD("application_name = %s", g_shell_config.application_name.c_str());
-            DLOGD("application_component_factory = %s", g_shell_config.application_component_factory.c_str());
-            DLOGD("jni_class_name = %s", g_shell_config.jni_class_name.c_str());
-            DLOGD("app_sign_sha256 = %s", g_shell_config.app_sign_sha256.c_str());
-            DLOGD("dex_sign = %s", g_shell_config.dex_sign.c_str());
-            DLOGD("insns_xor_key = 0x%x", g_shell_config.insns_xor_key);
-
+                DLOGD("application_name = %s", g_shell_config.application_name.c_str());
+                DLOGD("application_component_factory = %s", g_shell_config.application_component_factory.c_str());
+                DLOGD("jni_class_name = %s", g_shell_config.jni_class_name.c_str());
+                DLOGD("app_sign_sha256 = %s", g_shell_config.app_sign_sha256.c_str());
+                DLOGD("dex_sign = %s", g_shell_config.dex_sign.c_str());
+                DLOGD("insns_xor_key = 0x%x", g_shell_config.insns_xor_key);
+            } catch (const std::exception &e) {
+                DLOGE("parse shell config failed: %s", e.what());
+            }
         }
     }
 
