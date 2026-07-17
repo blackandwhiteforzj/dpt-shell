@@ -21,7 +21,7 @@ ext {
 
     // App version
     appVersionCode = 1
-    appVersionName = "2.12.1"
+    appVersionName = "2.13.0"
 
     // Java compatibility
     shellJavaVersion = JavaVersion.VERSION_1_8
