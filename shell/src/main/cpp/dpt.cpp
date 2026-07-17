@@ -6,6 +6,8 @@
 #include "dpt_crypto.h"
 #include "external/json/json.hpp"
 
+#include <memory>
+
 using namespace dpt;
 
 static pthread_mutex_t g_write_dexes_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -488,6 +490,7 @@ DPT_ENCRYPT void read_shell_config(JNIEnv *env) {
     auto entry = read_zip_file_entry(package_addr, package_size , AY_OBFUSCATE(SHELL_CONFIG_IN_ZIP));
     if(entry.has_value()) {
         auto [entry_data, entry_size] = entry.value();
+        std::unique_ptr<uint8_t[]> entry_guard(entry_data);
         if(entry_size > 0) {
             reflect::android_app_ActivityThread activityThread(env);
             jobject mBoundApplicationObj = activityThread.getBoundApplication();

@@ -9,6 +9,7 @@ import com.luoye.dpt.util.ZipUtils;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -152,7 +153,12 @@ public class Aab extends AndroidPackage {
 
         try {
             ProcessBuilder processBuilder = new ProcessBuilder(command);
+            processBuilder.redirectErrorStream(true);
             Process process = processBuilder.start();
+            try (InputStream inputStream = process.getInputStream()) {
+                // Drain stdout/stderr to avoid pipe buffer deadlock
+                inputStream.readAllBytes();
+            }
             int exitCode = process.waitFor();
             return exitCode == 0;
         }

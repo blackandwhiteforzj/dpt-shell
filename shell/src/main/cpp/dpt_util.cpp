@@ -336,6 +336,11 @@ DPT_ENCRYPT void extractDexesInNeeded(JNIEnv *env, void *package_addr, size_t pa
     }
 }
 
+DPT_ENCRYPT static size_t align_to_page_size(size_t size) {
+    const int page_size = sysconf(_SC_PAGESIZE);
+    return (size / page_size) * page_size + page_size;
+}
+
 DPT_ENCRYPT static void
 load_zip_by_mmap(const char *zip_file_path, void **zip_addr, size_t *zip_size) {
     int fd = open(zip_file_path, O_RDONLY);
@@ -345,15 +350,24 @@ load_zip_by_mmap(const char *zip_file_path, void **zip_addr, size_t *zip_size) {
     }
     struct stat fst;
     fstat(fd, &fst);
-    const int page_size = sysconf(_SC_PAGESIZE);
-    const size_t need_zip_size = (fst.st_size / page_size) * page_size + page_size;
+    const size_t need_zip_size = align_to_page_size(fst.st_size);
     DLOGD("fst.st_size: " FMT_INT64_T ", need size: %zu", fst.st_size, need_zip_size);
-    *zip_addr = mmap64(nullptr,
+    void *mapped = mmap64(nullptr,
                        need_zip_size,
                        PROT_READ,
                        MAP_PRIVATE,
                        fd,
                        0);
+    close(fd);
+
+    if (mapped == MAP_FAILED) {
+        DLOGE("mmap failed!");
+        *zip_addr = nullptr;
+        *zip_size = 0;
+        return;
+    }
+
+    *zip_addr = mapped;
     *zip_size = fst.st_size;
 
     DLOGD("addr: " FMT_POINTER " size: %zu", (uintptr_t) *zip_addr, *zip_size);
@@ -373,9 +387,11 @@ void load_package(JNIEnv *env, void **package_addr, size_t *package_size) {
 }
 
 void unload_package(void *package_addr, size_t package_size) {
-    if (package_addr != nullptr) {
-        munmap(package_addr, package_size);
-        DLOGD("addr: " FMT_POINTER " size: %zu", (uintptr_t) package_addr, package_size);
+    if (package_addr != nullptr && package_size > 0) {
+        // munmap length must match the page-aligned length used in mmap
+        const size_t mapped_size = align_to_page_size(package_size);
+        munmap(package_addr, mapped_size);
+        DLOGD("addr: " FMT_POINTER " size: %zu (mapped: %zu)", (uintptr_t) package_addr, package_size, mapped_size);
     }
 }
 
@@ -383,6 +399,9 @@ DPT_ENCRYPT
 std::optional<std::tuple<uint8_t *, size_t>>
 read_zip_file_entry(void *zip_addr, off_t zip_size, const char *entry_name) {
     DLOGD("prepare read file: %s", entry_name);
+
+    uint8_t *result_data = nullptr;
+    size_t result_size = 0;
 
     void *mem_stream = mz_stream_mem_create();
     mz_stream_mem_set_buffer(mem_stream, zip_addr, zip_size);
@@ -403,7 +422,7 @@ read_zip_file_entry(void *zip_addr, off_t zip_size, const char *entry_name) {
                           file_info->filename,
                           file_info->uncompressed_size);
                     if (file_info->uncompressed_size == 0) {
-                        return std::nullopt;
+                        break;
                     }
 
                     err = mz_zip_entry_read_open(zip_handle, 0, nullptr);
@@ -421,7 +440,9 @@ read_zip_file_entry(void *zip_addr, off_t zip_size, const char *entry_name) {
                                                                    file_info->uncompressed_size);
 
                     DLOGD("read entry finish: %s, read size: %zu", entry_name, bytes_read);
-                    return {{entry_data, file_info->uncompressed_size}};
+                    result_data = entry_data;
+                    result_size = file_info->uncompressed_size;
+                    break;
                 } // strncmp
             } else {
                 DLOGW("get entry info err: %d", err);
@@ -433,6 +454,13 @@ read_zip_file_entry(void *zip_addr, off_t zip_size, const char *entry_name) {
         DLOGW("zip open fail: %d", err);
     } // zip open
 
+    mz_zip_close(zip_handle);
+    mz_zip_delete(&zip_handle);
+    mz_stream_mem_delete(&mem_stream);
+
+    if (result_data != nullptr) {
+        return {{result_data, result_size}};
+    }
     return std::nullopt;
 }
 

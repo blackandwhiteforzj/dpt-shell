@@ -464,25 +464,24 @@ public class DexUtils {
      */
     public static void restoreInstructions(File dexFile,List<Instruction> instructions) throws IOException {
         Dex dex = new Dex(dexFile);
-        RandomAccessFile randomAccessFile = new RandomAccessFile(dexFile,"rw");
-        Iterable<ClassDef> classDefs = dex.classDefs();
-        int listIndex = 0;
-        for (ClassDef classDef : classDefs) {
-            ClassData.Method[] methods = dex.readClassData(classDef).allMethods();
-            for(int i = 0; i < methods.length ;i++){
-                ClassData.Method method = methods[i];
-                int offsetInstructions = method.getCodeOffset() + 16;
-                Instruction instruction = instructions.get(listIndex ++ );
-                if(instruction.getMethodIndex() == method.getMethodIndex()) {
-                    byte[] byteCode = Base64.getDecoder().decode(instruction.getInstructionsData());
+        try (RandomAccessFile randomAccessFile = new RandomAccessFile(dexFile,"rw")) {
+            Iterable<ClassDef> classDefs = dex.classDefs();
+            int listIndex = 0;
+            for (ClassDef classDef : classDefs) {
+                ClassData.Method[] methods = dex.readClassData(classDef).allMethods();
+                for(int i = 0; i < methods.length ;i++){
+                    ClassData.Method method = methods[i];
+                    int offsetInstructions = method.getCodeOffset() + 16;
+                    Instruction instruction = instructions.get(listIndex ++ );
+                    if(instruction.getMethodIndex() == method.getMethodIndex()) {
+                        byte[] byteCode = Base64.getDecoder().decode(instruction.getInstructionsData());
 
-                    randomAccessFile.seek(offsetInstructions);
-                    randomAccessFile.write(byteCode,0,byteCode.length);
+                        randomAccessFile.seek(offsetInstructions);
+                        randomAccessFile.write(byteCode,0,byteCode.length);
+                    }
                 }
             }
         }
-
-        randomAccessFile.close();
     }
 
 }

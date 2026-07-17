@@ -317,10 +317,10 @@ public abstract class AndroidPackage {
             }
 
             // Output the new dex file
-            FileOutputStream localFileOutputStream = new FileOutputStream(targetDexFile);
-            localFileOutputStream.write(newDexBytes);
-            localFileOutputStream.flush();
-            localFileOutputStream.close();
+            try (FileOutputStream localFileOutputStream = new FileOutputStream(targetDexFile)) {
+                localFileOutputStream.write(newDexBytes);
+                localFileOutputStream.flush();
+            }
             LogUtils.info("New Dex file generated: " + targetDexFile);
             // Delete the dex zip package
             FileUtils.deleteRecurse(originalDexZipFile);
@@ -549,10 +549,8 @@ public abstract class AndroidPackage {
     }
 
     private void encryptSoFile(File soFile, byte[] rc4Key) {
-        try {
-            ReadElf readElf = new ReadElf(soFile);
+        try (ReadElf readElf = new ReadElf(soFile)) {
             List<ReadElf.SectionHeader> sectionHeaders = readElf.getSectionHeaders();
-            readElf.close();
             for (ReadElf.SectionHeader sectionHeader : sectionHeaders) {
                 if(".bitcode".equals(sectionHeader.getName())) {
                     LogUtils.info("start encrypt %s section: %s, offset: %s, size: %s",
@@ -578,8 +576,7 @@ public abstract class AndroidPackage {
     }
 
     private void writeSoFileCryptKey(File soFile, byte[] rc4key) {
-        try {
-            ReadElf readElf = new ReadElf(soFile);
+        try (ReadElf readElf = new ReadElf(soFile)) {
             ReadElf.Symbol symbol = readElf.getDynamicSymbol(Const.RC4_KEY_SYMBOL);
             if(symbol == null) {
                 LogUtils.warn("cannot find symbol in %s, no need write key", soFile.getName());
@@ -595,7 +592,6 @@ public abstract class AndroidPackage {
             long symbolDataOffset = sectionHeader.getOffset() + value - sectionHeader.getAddr();
             LogUtils.info("write symbol data to %s(%s)", soFile.getName(), HexUtils.toHexString(symbolDataOffset));
 
-            readElf.close();
             IoUtils.writeFile(soFile.getAbsolutePath(),rc4key,symbolDataOffset);
         }
         catch (Exception e) {
@@ -910,11 +906,10 @@ public abstract class AndroidPackage {
                                 String KeyPassword);
 
     private static void zipalign(String inputPackagePath, String outputPackagePath) throws Exception{
-        RandomAccessFile in = new RandomAccessFile(inputPackagePath, "r");
-        FileOutputStream out = new FileOutputStream(outputPackagePath);
-        ZipAlign.alignZip(in, out);
-        IoUtils.close(in);
-        IoUtils.close(out);
+        try (RandomAccessFile in = new RandomAccessFile(inputPackagePath, "r");
+             FileOutputStream out = new FileOutputStream(outputPackagePath)) {
+            ZipAlign.alignZip(in, out);
+        }
     }
 
     private void processRuleFile() {

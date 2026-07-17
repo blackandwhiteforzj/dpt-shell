@@ -1,8 +1,6 @@
 package com.luoye.dpt.res;
 
 import com.android.aapt.Resources;
-import com.luoye.dpt.util.IoUtils;
-import com.luoye.dpt.util.LogUtils;
 
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -36,8 +34,10 @@ public class AndroidResourcesEditor {
 
     public static void putAttribute(String filePath, String outFileName, String elementName, String attributeName, String newValue)
             throws IOException {
-        FileInputStream fileInputStream = new FileInputStream(filePath);
-        Resources.XmlNode xmlNode = Resources.XmlNode.parseFrom(fileInputStream);
+        Resources.XmlNode xmlNode;
+        try (FileInputStream fileInputStream = new FileInputStream(filePath)) {
+            xmlNode = Resources.XmlNode.parseFrom(fileInputStream);
+        }
         Resources.XmlNode.Builder rootXmlNodeBuilder = Resources.XmlNode.newBuilder(xmlNode);
         Resources.XmlElement.Builder rootElementBuilder = rootXmlNodeBuilder.getElementBuilder();
 
@@ -110,19 +110,18 @@ public class AndroidResourcesEditor {
         Resources.XmlNode build = rootXmlNodeBuilder.build();
 
         byte[] byteArray = build.toByteArray();
-        FileOutputStream fos = new FileOutputStream(outFileName);
-
-        fos.write(byteArray);
-        IoUtils.close(fileInputStream);
-        IoUtils.close(fos);
+        try (FileOutputStream fos = new FileOutputStream(outFileName)) {
+            fos.write(byteArray);
+        }
     }
 
 
     public static String getAttributeValue(String filePath, String elementName, String attributeName)
             throws IOException {
-        FileInputStream fileInputStream = new FileInputStream(filePath);
-        Resources.XmlNode xmlNode = Resources.XmlNode.parseFrom(fileInputStream);
-        IoUtils.close(fileInputStream);
+        Resources.XmlNode xmlNode;
+        try (FileInputStream fileInputStream = new FileInputStream(filePath)) {
+            xmlNode = Resources.XmlNode.parseFrom(fileInputStream);
+        }
         Resources.XmlNode.Builder rootXmlNodeBuilder = Resources.XmlNode.newBuilder(xmlNode);
         Resources.XmlElement.Builder rootElementBuilder = rootXmlNodeBuilder.getElementBuilder();
         List<Resources.XmlAttribute.Builder> attributeList = rootElementBuilder.getAttributeBuilderList();

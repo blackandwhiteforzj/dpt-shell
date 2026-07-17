@@ -1,19 +1,16 @@
  package com.luoyesiqiu.shell.util;
 
-import android.content.Context;
 import android.util.Log;
 
 import com.luoyesiqiu.shell.Global;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.Enumeration;
 import java.util.zip.CRC32;
 import java.util.zip.CheckedInputStream;
@@ -33,22 +30,15 @@ import java.util.zip.ZipFile;
      }
 
      public static long getCrc32(File f) {
-         FileInputStream fileInputStream = null;
-         CheckedInputStream checkedInputStream = null;
          long crcResult = 0L;
-         try {
-             fileInputStream = new FileInputStream(f);
-             checkedInputStream = new CheckedInputStream(fileInputStream,new CRC32());
-             int len = -1;
+         try (FileInputStream fileInputStream = new FileInputStream(f);
+              CheckedInputStream checkedInputStream = new CheckedInputStream(fileInputStream, new CRC32())) {
              byte[] buf = new byte[4096];
-             while((len = checkedInputStream.read(buf)) != -1) {
+             while (checkedInputStream.read(buf) != -1) {
              }
              crcResult = checkedInputStream.getChecksum().getValue();
          }
          catch (Throwable e){
-         }
-         finally {
-             FileUtils.close(checkedInputStream);
          }
          return crcResult;
      }
@@ -64,8 +54,7 @@ import java.util.zip.ZipFile;
          if(entryFile.exists()){
              localFileCrc = getCrc32(entryFile);
          }
-         try {
-             ZipFile zip = new ZipFile(zipFilePath);
+         try (ZipFile zip = new ZipFile(zipFilePath)) {
              Enumeration<? extends ZipEntry> entries = zip.entries();
              while(entries.hasMoreElements()){
                  ZipEntry entry = entries.nextElement();
@@ -78,15 +67,14 @@ import java.util.zip.ZipFile;
                      byte[] buf = new byte[4096];
                      int len = -1;
 
-                     FileOutputStream fileOutputStream = new FileOutputStream(entryFile);
-                     BufferedOutputStream bufferedOutputStream = new BufferedOutputStream(fileOutputStream);
-                     BufferedInputStream bufferedInputStream = new BufferedInputStream(zip.getInputStream(entry));
-                     while ((len = bufferedInputStream.read(buf)) != -1) {
-                         bufferedOutputStream.write(buf, 0, len);
+                     try (FileOutputStream fileOutputStream = new FileOutputStream(entryFile);
+                          BufferedOutputStream bufferedOutputStream = new BufferedOutputStream(fileOutputStream);
+                          BufferedInputStream bufferedInputStream = new BufferedInputStream(zip.getInputStream(entry))) {
+                         while ((len = bufferedInputStream.read(buf)) != -1) {
+                             bufferedOutputStream.write(buf, 0, len);
+                         }
                      }
                      Log.d(TAG, "unzip '" + entry.getName() + "' success. local = " + localFileCrc + ", zip = " + entry.getCrc());
-
-                     FileUtils.close(bufferedOutputStream);
                      break;
                  }
                  else {
