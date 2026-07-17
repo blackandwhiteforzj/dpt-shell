@@ -44,6 +44,21 @@ public class ZipUtils {
 
     private static final String META_INF_NAME = "META-INF";
 
+    /**
+     * Signature files under META-INF must be dropped before re-sign,
+     * but META-INF/services (ServiceLoader) and other resources must be kept.
+     */
+    private static boolean isSignatureMetaInfFile(String entryName) {
+        String name = entryName.replace('\\', '/');
+        int slash = name.lastIndexOf('/');
+        String fileName = slash >= 0 ? name.substring(slash + 1) : name;
+        String upper = fileName.toUpperCase(Locale.US);
+        return upper.equals("MANIFEST.MF")
+                || upper.endsWith(".SF")
+                || upper.endsWith(".RSA")
+                || upper.endsWith(".DSA")
+                || upper.endsWith(".EC");
+    }
 
     /**
      * don not compress file list
@@ -285,8 +300,7 @@ public class ZipUtils {
             while (entries.hasMoreElements()) {
                 ZipEntry zipEntry = entries.nextElement();
                 String name = zipEntry.getName();
-                if (name.equals("META-INF/CERT.RSA") || name.equals("META-INF/CERT.SF")
-                        || name.equals("META-INF/MANIFEST.MF")) {
+                if (name.startsWith("META-INF/") && isSignatureMetaInfFile(name)) {
                     continue;
                 }
                 if (!zipEntry.isDirectory()) {
@@ -374,9 +388,6 @@ public class ZipUtils {
 
     private static void compressDir(File dir, ZipOutputStream zos, String basePath,
                                     List<String> doNotCompress, Map<String, String> resConflictFiles) throws Exception {
-        if(dir.getName().equals(META_INF_NAME)){
-            return;
-        }
         File[] files = dir.listFiles();
         if (files == null) {
             return;
@@ -399,6 +410,11 @@ public class ZipUtils {
             fileName = resConflictFiles.get(fileName);
         }
         String dirName = dir + fileName;
+        // Keep META-INF/services for ServiceLoader (e.g. kotlinx.coroutines Main dispatcher),
+        // but exclude old signature files to avoid resign conflicts.
+        if (dirName.contains(META_INF_NAME) && isSignatureMetaInfFile(dirName)) {
+            return;
+        }
         String[] dirNameNew = dirName.split("/");
 
         StringBuilder buffer = new StringBuilder();
