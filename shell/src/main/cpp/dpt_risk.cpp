@@ -4,7 +4,9 @@
 
 #include "dpt_risk.h"
 #include <android/api-level.h>
+#include <climits>
 #include "mbedtls/sha256.h"
+#include "mz_crypt.h"
 
 DPT_ENCRYPT NO_INLINE void dpt_crash() {
 #ifdef DEBUG
@@ -32,6 +34,89 @@ DPT_ENCRYPT void junkCodeDexProtect(JNIEnv *env) {
     }
 }
 
+// Compare in-memory libc .text CRC with on-disk .text CRC; crash if mismatched.
+DPT_ENCRYPT NO_INLINE void verifyLibcTextCrc() {
+    Dl_info info = {};
+    if (dladdr(reinterpret_cast<const void *>(&fopen), &info) == 0
+        || info.dli_fbase == nullptr) {
+        DLOGW("dladdr libc failed, skip text crc");
+        return;
+    }
+
+    std::string libc_path;
+    if (info.dli_fname != nullptr) {
+        if (info.dli_fname[0] == '/') {
+            libc_path.assign(info.dli_fname);
+        } else {
+            libc_path = find_so_path(info.dli_fname);
+        }
+    }
+    if (libc_path.empty()) {
+        libc_path = find_so_path(AY_OBFUSCATE("libc.so"));
+    }
+    if (libc_path.empty()) {
+        DLOGW("cannot resolve libc path, skip text crc");
+        return;
+    }
+
+    Elf_Shdr shdr = {};
+    get_elf_section(&shdr, libc_path.c_str(), AY_OBFUSCATE(".text"));
+    if (shdr.sh_size == 0) {
+        DLOGW("libc .text section missing or empty, skip text crc");
+        return;
+    }
+
+    FILE *fp = fopen(libc_path.c_str(), "r");
+    if (fp == nullptr) {
+        DLOGW("cannot open libc file: %s, skip text crc", libc_path.c_str());
+        return;
+    }
+
+    if (fseek(fp, static_cast<long>(shdr.sh_offset), SEEK_SET) != 0) {
+        DLOGW("fseek libc .text failed, skip text crc");
+        fclose(fp);
+        return;
+    }
+
+    auto *file_buf = static_cast<uint8_t *>(malloc(shdr.sh_size));
+    if (file_buf == nullptr) {
+        DLOGW("malloc for libc .text failed, skip text crc");
+        fclose(fp);
+        return;
+    }
+
+    size_t nread = fread(file_buf, 1, shdr.sh_size, fp);
+    fclose(fp);
+    if (nread != shdr.sh_size) {
+        DLOGW("fread libc .text incomplete, skip text crc");
+        DPT_FREE(file_buf);
+        return;
+    }
+
+    uint32_t crc_file = 0;
+    uint32_t crc_mem = 0;
+    size_t remaining = shdr.sh_size;
+    size_t offset = 0;
+    const auto *mem_base = reinterpret_cast<const uint8_t *>(info.dli_fbase) + shdr.sh_addr;
+    while (remaining > 0) {
+        int32_t chunk = remaining > static_cast<size_t>(INT32_MAX)
+                        ? INT32_MAX
+                        : static_cast<int32_t>(remaining);
+        crc_file = mz_crypt_crc32_update(crc_file, file_buf + offset, chunk);
+        crc_mem = mz_crypt_crc32_update(crc_mem, mem_base + offset, chunk);
+        offset += static_cast<size_t>(chunk);
+        remaining -= static_cast<size_t>(chunk);
+    }
+    DPT_FREE(file_buf);
+
+    DLOGD("libc .text crc file=%08x mem=%08x size=%u", crc_file, crc_mem,
+          static_cast<unsigned>(shdr.sh_size));
+    if (crc_file != crc_mem) {
+        DLOGW("libc .text crc mismatch, file=%08x mem=%08x", crc_file, crc_mem);
+        dpt_crash();
+    }
+}
+
 [[noreturn]] DPT_ENCRYPT void *detectFridaOnThread(__unused void *args) {
     const char *frida_agent = AY_OBFUSCATE("frida-agent");
     const char *pool_frida = AY_OBFUSCATE("pool-frida");
@@ -55,6 +140,7 @@ DPT_ENCRYPT void junkCodeDexProtect(JNIEnv *env) {
             DLOGD("found frida threads");
             dpt_crash();
         }
+        verifyLibcTextCrc();
         sleep(10);
     }
 }
