@@ -35,6 +35,11 @@ usage: java -jar dpt.jar [option] -f <package_file>
     --debug                  Make package debuggable.
     --disable-acf            Disable app component factory(just use for
                              debug).
+    --disable-anti-debug     Disable runtime anti-debug.
+    --disable-crc-detect     Disable runtime libc .text CRC detection.
+                             
+    --disable-frida-detect   Disable runtime Frida detection.
+                             
     --dump-code              Dump the code item of DEX and save it to
                              .json files.
  -e,--exclude-abi <arg>      Exclude specific ABIs (comma separated, e.g.

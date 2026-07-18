@@ -7,6 +7,9 @@
 #include <climits>
 #include "mbedtls/sha256.h"
 #include "mz_crypt.h"
+#include "dpt.h"
+
+extern ShellConfig g_shell_config;
 
 DPT_ENCRYPT NO_INLINE void dpt_crash() {
 #ifdef DEBUG
@@ -117,76 +120,73 @@ DPT_ENCRYPT NO_INLINE void verifyLibcTextCrc() {
     }
 }
 
-[[noreturn]] DPT_ENCRYPT void *detectFridaOnThread(__unused void *args) {
+DPT_ENCRYPT void detectFrida() {
     const char *frida_agent = AY_OBFUSCATE("frida-agent");
     const char *pool_frida = AY_OBFUSCATE("pool-frida");
     const char *gmain = AY_OBFUSCATE("gmain");
     const char *gbus = AY_OBFUSCATE("gdbus");
     const char *gum_js_loop = AY_OBFUSCATE("gum-js-loop");
+
+    int frida_so_count = find_in_maps(1, frida_agent);
+    if (frida_so_count > 0) {
+        DLOGD("found frida so");
+        dpt_crash();
+    }
+    int frida_thread_count = find_in_threads_list(4
+            , pool_frida
+            , gmain
+            , gbus
+            , gum_js_loop);
+
+    if (frida_thread_count >= 2) {
+        DLOGD("found frida threads");
+        dpt_crash();
+    }
+}
+
+DPT_ENCRYPT void detectDebugger() {
+    const char *status_path = AY_OBFUSCATE("/proc/self/status");
+    FILE *fp = fopen(status_path, "r");
+    if (fp == nullptr) {
+        DLOGW("cannot open /proc/self/status, skip tracer pid check");
+        return;
+    }
+
+    const char *tracer_key = AY_OBFUSCATE("TracerPid:");
+    char line[256];
+    while (fgets(line, sizeof(line), fp) != nullptr) {
+        if (strncmp(line, tracer_key, strlen(tracer_key)) == 0) {
+            int tracer_pid = 0;
+            sscanf(line + strlen(tracer_key), "%d", &tracer_pid);
+            if (tracer_pid != 0) {
+                DLOGD("found tracer pid: %d", tracer_pid);
+                fclose(fp);
+                dpt_crash();
+            }
+            break;
+        }
+    }
+    fclose(fp);
+}
+
+[[noreturn]] DPT_ENCRYPT void *detectRiskOnThread(__unused void *args) {
     while (true) {
-
-        int frida_so_count = find_in_maps(1, frida_agent);
-        if(frida_so_count > 0) {
-            DLOGD("found frida so");
-            dpt_crash();
+        if ((g_shell_config.risk_check_flags & FLAG_DISABLE_FRIDA_DETECT) == 0) {
+            detectFrida();
         }
-        int frida_thread_count = find_in_threads_list(4
-                ,pool_frida
-                ,gmain
-                ,gbus
-                ,gum_js_loop);
-
-        if(frida_thread_count >= 2) {
-            DLOGD("found frida threads");
-            dpt_crash();
+        if ((g_shell_config.risk_check_flags & FLAG_DISABLE_CRC_DETECT) == 0) {
+            verifyLibcTextCrc();
         }
-        verifyLibcTextCrc();
+        if ((g_shell_config.risk_check_flags & FLAG_DISABLE_ANTI_DEBUG) == 0) {
+            detectDebugger();
+        }
         sleep(10);
     }
 }
 
-
-DPT_ENCRYPT void detectFrida() {
+DPT_ENCRYPT void detectRisk() {
     pthread_t t;
-    pthread_create(&t, nullptr,detectFridaOnThread,nullptr);
-}
-
-DPT_ENCRYPT void doPtrace() {
-    __unused int ret = sys_ptrace(PTRACE_TRACEME,0,0,0);
-    DLOGD("result: %d",ret);
-}
-
-DPT_ENCRYPT void *protectProcessOnThread(void *args) {
-    pid_t child = *((pid_t *)args);
-
-    DLOGD("waitpid %d", child);
-
-    free(args);
-
-    int status = 0;
-    int pid = waitpid(child, &status, 0);
-    if(pid > 0) {
-        DLOGW("detect child process %d exited, status: %d", pid, status);
-        // 如果子进程是被系统回收或激进后台控制杀死的（常见为 SIGKILL、SIGTERM），不要崩溃主进程
-        if (WIFSIGNALED(status)) {
-            int sig = WTERMSIG(status);
-            if (sig == SIGKILL || sig == SIGTERM || sig == SIGPIPE) {
-                DLOGW("Child process killed by system signal %d, skip crash to maintain stability", sig);
-                return nullptr;
-            }
-        }
-        dpt_crash();
-    }
-    DLOGD("waitpid %d end", child);
-
-    return nullptr;
-}
-
-DPT_ENCRYPT void protectChildProcess(pid_t pid) {
-    pthread_t t;
-    pid_t *child = (pid_t *) malloc(sizeof(pid_t));
-    *child = pid;
-    pthread_create(&t, nullptr,protectProcessOnThread,child);
+    pthread_create(&t, nullptr, detectRiskOnThread, nullptr);
 }
 
 DPT_ENCRYPT void verifyAppSignature(JNIEnv *env, jobject context, const char *expectedSha256) {

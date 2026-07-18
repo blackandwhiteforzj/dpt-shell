@@ -188,21 +188,12 @@ DPT_ENCRYPT jstring readApplicationName(JNIEnv *env, jclass __unused) {
     return env->NewStringUTF(g_shell_config.application_name.c_str());
 }
 
-DPT_ENCRYPT void createAntiRiskProcess() {
-    pid_t child = fork();
-    if(child < 0) {
-        DLOGW("fork fail!");
-        detectFrida();
-    }
-    else if(child == 0) {
-        DLOGD("in child process");
-        detectFrida();
-        doPtrace();
-    }
-    else {
-        DLOGD("in main process, child pid: %d", child);
-        protectChildProcess(child);
-        detectFrida();
+DPT_ENCRYPT void antiRisk() {
+    bool needDetect = ((g_shell_config.risk_check_flags & FLAG_DISABLE_FRIDA_DETECT) == 0)
+            || ((g_shell_config.risk_check_flags & FLAG_DISABLE_CRC_DETECT) == 0)
+            || ((g_shell_config.risk_check_flags & FLAG_DISABLE_ANTI_DEBUG) == 0);
+    if (needDetect) {
+        detectRisk();
     }
 }
 
@@ -266,7 +257,6 @@ void init_dpt() {
     DLOGI("call!");
 
     dpt_hook();
-    createAntiRiskProcess();
 }
 
 jclass getRealApplicationClass(JNIEnv *env, const char *applicationClassName) {
@@ -564,6 +554,7 @@ DPT_ENCRYPT void read_shell_config(JNIEnv *env) {
                 g_shell_config.app_sign_sha256 = shell_config.value("app_sign_sha256", "");
                 g_shell_config.dex_sign = shell_config.value("dex_sign", "");
                 g_shell_config.insns_xor_key = shell_config.value("insns_xor_key", 0);
+                g_shell_config.risk_check_flags = shell_config.value("risk_check_flags", 0);
 
                 DLOGD("application_name = %s", g_shell_config.application_name.c_str());
                 DLOGD("application_component_factory = %s", g_shell_config.application_component_factory.c_str());
@@ -571,6 +562,7 @@ DPT_ENCRYPT void read_shell_config(JNIEnv *env) {
                 DLOGD("app_sign_sha256 = %s", g_shell_config.app_sign_sha256.c_str());
                 DLOGD("dex_sign = %s", g_shell_config.dex_sign.c_str());
                 DLOGD("insns_xor_key = 0x%x", g_shell_config.insns_xor_key);
+                DLOGD("risk_check_flags = 0x%x", g_shell_config.risk_check_flags);
             } catch (const std::exception &e) {
                 DLOGE("parse shell config failed: %s", e.what());
             }
@@ -598,6 +590,8 @@ DPT_ENCRYPT JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *) {
     }
 
     read_shell_config(env);
+
+    antiRisk();
 
     if (registerNativeMethods(env) == JNI_FALSE) {
         DLOGF("register native methods fail!");

@@ -68,6 +68,9 @@ public class Dpt {
                 + "- x86\n"
                 + "- x86_64"));
         options.addOption(new Option(Const.OPTION_VERIFY_SIGN, Const.OPTION_VERIFY_SIGN_LONG, false, "Enable runtime app signature verification. The certificate SHA-256 is computed automatically from the signing keystore.\n"));
+        options.addOption(new Option(null, Const.OPTION_DISABLE_FRIDA_DETECT_LONG, false, "Disable runtime Frida detection.\n"));
+        options.addOption(new Option(null, Const.OPTION_DISABLE_CRC_DETECT_LONG, false, "Disable runtime libc .text CRC detection.\n"));
+        options.addOption(new Option(null, Const.OPTION_DISABLE_ANTI_DEBUG_LONG, false, "Disable runtime anti-debug.\n"));
 
         CommandLineParser commandLineParser = new DefaultParser();
         try {
@@ -99,6 +102,17 @@ public class Dpt {
 
             String filePath = commandLine.getOptionValue(Const.OPTION_INPUT_FILE);
 
+            int riskCheckFlags = 0;
+            if (commandLine.hasOption(Const.OPTION_DISABLE_FRIDA_DETECT_LONG)) {
+                riskCheckFlags |= Const.FLAG_DISABLE_FRIDA_DETECT;
+            }
+            if (commandLine.hasOption(Const.OPTION_DISABLE_CRC_DETECT_LONG)) {
+                riskCheckFlags |= Const.FLAG_DISABLE_CRC_DETECT;
+            }
+            if (commandLine.hasOption(Const.OPTION_DISABLE_ANTI_DEBUG_LONG)) {
+                riskCheckFlags |= Const.FLAG_DISABLE_ANTI_DEBUG;
+            }
+
             if(filePath.endsWith(".apk")) {
                 return new Apk.Builder()
                         .filePath(filePath)
@@ -113,6 +127,7 @@ public class Dpt {
                         .smaller(commandLine.hasOption(Const.OPTION_SMALLER))
                         .protectConfigFile(commandLine.getOptionValue(Const.OPTION_PROTECT_CONFIG))
                         .verifySign(commandLine.hasOption(Const.OPTION_VERIFY_SIGN))
+                        .riskCheckFlags(riskCheckFlags)
                         .build();
             }
             else if(filePath.endsWith(".aab")) {
@@ -129,6 +144,7 @@ public class Dpt {
                         .smaller(commandLine.hasOption(Const.OPTION_SMALLER))
                         .protectConfigFile(commandLine.getOptionValue(Const.OPTION_PROTECT_CONFIG))
                         .verifySign(commandLine.hasOption(Const.OPTION_VERIFY_SIGN))
+                        .riskCheckFlags(riskCheckFlags)
                         .build();
             }
             else {

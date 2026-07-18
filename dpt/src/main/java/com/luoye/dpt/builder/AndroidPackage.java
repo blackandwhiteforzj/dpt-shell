@@ -68,6 +68,7 @@ public abstract class AndroidPackage {
         public boolean smaller = false;
         public String protectConfigFile = null;
         public boolean verifySign = false;
+        public int riskCheckFlags = 0;
 
         public Builder filePath(String path) {
             this.filePath = path;
@@ -101,6 +102,11 @@ public abstract class AndroidPackage {
 
         public Builder verifySign(boolean verifySign) {
             this.verifySign = verifySign;
+            return this;
+        }
+
+        public Builder riskCheckFlags(int riskCheckFlags) {
+            this.riskCheckFlags = riskCheckFlags;
             return this;
         }
 
@@ -150,6 +156,7 @@ public abstract class AndroidPackage {
     private boolean keepClasses = false;
     private String protectConfigFile;
     private boolean verifySign = false;
+    private int riskCheckFlags = 0;
 
     public AndroidPackage(Builder builder) {
         setFilePath(builder.filePath);
@@ -165,6 +172,7 @@ public abstract class AndroidPackage {
         setSmaller(builder.smaller);
         setProtectConfigFile(builder.protectConfigFile);
         setVerifySign(builder.verifySign);
+        setRiskCheckFlags(builder.riskCheckFlags);
     }
 
     public void setProtectConfigFile(String protectConfigFile) {
@@ -181,6 +189,14 @@ public abstract class AndroidPackage {
 
     public boolean isVerifySign() {
         return verifySign;
+    }
+
+    public int getRiskCheckFlags() {
+        return riskCheckFlags;
+    }
+
+    public void setRiskCheckFlags(int riskCheckFlags) {
+        this.riskCheckFlags = riskCheckFlags;
     }
 
     public boolean isSmaller() {
@@ -1068,10 +1084,14 @@ public abstract class AndroidPackage {
         processRuleFile();
         processProtectConfigFile();
 
+        ShellConfig shellConfig = ShellConfig.getInstance();
+        // Merge CLI flags into config-file flags (each bit = one switch)
+        shellConfig.setRiskCheckFlags(shellConfig.getRiskCheckFlags() | getRiskCheckFlags());
+
         if (isVerifySign()) {
             String sha256 = computeSignatureSha256();
             if (sha256 != null) {
-                ShellConfig.getInstance().setAppSignSha256(sha256);
+                shellConfig.setAppSignSha256(sha256);
                 LogUtils.info("Signature verification enabled, SHA-256: " + sha256);
             } else {
                 LogUtils.error("Failed to compute certificate SHA-256, signature verification disabled.");

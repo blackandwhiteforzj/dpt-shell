@@ -27,6 +27,10 @@ public class ShellConfig {
     @JSONField(name = "insns_xor_key")
     private int insnsXorKey;
 
+    // One int, each bit is a switch (1 = disable). See Const.FLAG_DISABLE_*
+    @JSONField(name = "risk_check_flags")
+    private int riskCheckFlags;
+
     private ShellConfig() {
     }
 
@@ -99,6 +103,7 @@ public class ShellConfig {
         this.shellPackageName = StringUtils.isBlank(shellConfig.getShellPackageName()) ? Const.DEFAULT_SHELL_PACKAGE_NAME : shellConfig.getShellPackageName();
         this.signatureConfig = shellConfig.getSignatureConfig();
         this.appSignSha256 = shellConfig.getAppSignSha256();
+        this.riskCheckFlags = shellConfig.getRiskCheckFlags();
     }
 
     public String getSlashShellPackageName() {
@@ -154,6 +159,14 @@ public class ShellConfig {
         this.insnsXorKey = insnsXorKey;
     }
 
+    public int getRiskCheckFlags() {
+        return riskCheckFlags;
+    }
+
+    public void setRiskCheckFlags(int riskCheckFlags) {
+        this.riskCheckFlags = riskCheckFlags;
+    }
+
     public String getJniSlashClassName() {
         return String.format(Locale.US, "%s/%s",
                 getSlashShellPackageName(),
@@ -176,6 +189,7 @@ public class ShellConfig {
         }
         jsonObject.put("dex_sign", getDexSign());
         jsonObject.put("insns_xor_key", getInsnsXorKey());
+        jsonObject.put("risk_check_flags", getRiskCheckFlags());
         return jsonObject.toString();
     }
 
